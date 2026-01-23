@@ -1,0 +1,89 @@
+# LEAP Hand Configuration for DexGraspNet2
+# 16 DoF dexterous hand with 4 fingers
+
+name: leap_hand
+
+# Paths (relative to this file or absolute)
+urdf_path: ../../../robot_models/urdf/leap_hand_simplified.urdf
+meta_path: ../../../robot_models/meta/leap_hand/meta.yaml
+
+# Degrees of freedom
+num_dofs: 16
+
+# Joint names in network output order
+joint_names:
+  # Index finger
+  - j0
+  - j1
+  - j2
+  - j3
+  # Middle finger
+  - j4
+  - j5
+  - j6
+  - j7
+  # Ring finger
+  - j8
+  - j9
+  - j10
+  - j11
+  # Thumb
+  - j12
+  - j13
+  - j14
+  - j15
+
+# Joint limits (radians)
+joint_lower_limits:
+  # Index finger
+  - -1.047
+  - -0.314
+  - -0.506
+  - -0.366
+  # Middle finger
+  - -1.047
+  - -0.314
+  - -0.506
+  - -0.366
+  # Ring finger
+  - -1.047
+  - -0.314
+  - -0.506
+  - -0.366
+  # Thumb
+  - -0.349
+  - -0.47
+  - -1.20
+  - -1.34
+
+joint_upper_limits:
+  # Index finger
+  - 1.047
+  - 2.23
+  - 1.885
+  - 2.042
+  # Middle finger
+  - 1.047
+  - 2.23
+  - 1.885
+  - 2.042
+  # Ring finger
+  - 1.047
+  - 2.23
+  - 1.885
+  - 2.042
+  # Thumb
+  - 2.094
+  - 2.443
+  - 1.90
+  - 1.88
+
+# Fingertip links (for contact detection)
+fingertip_links:
+  - fingertip
+  - fingertip_2
+  - fingertip_3
+  - thumb_fingertip
+
+# Base/wrist link name
+wrist_link: hand_base_link

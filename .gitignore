@@ -6,3 +6,29 @@ wandb
 DexGraspNet2.0-ckpts
 pretrained
 tmp
+
+# Visualization outputs
+*.html
+
+# Internal planning docs
+workplan/
+
+# Large dependencies
+third_party/
+
+# Data outputs
+potato/
+scenes/
+
+# Internal tool files
+.claude/
+
+# Temporary debug scripts
+tests/test_viewer_*.py
+tests/debug_*.py
+tests/check_bowl_mesh.py
+tests/demo_grasp_verification.py
+tests/demo_grasp_verification_simple.py
+tests/demo_isaac_gym_gui.py
+tests/test_extra_params.py
+tests/test_import_order.py

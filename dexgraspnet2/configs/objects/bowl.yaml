@@ -1,0 +1,27 @@
+# Bowl Object Configuration for DexGraspNet2
+
+name: bowl
+
+# Path to mesh file (relative or absolute)
+mesh_path: ../../../workplan/bowl/bowl.obj
+
+# Optional USD path for Isaac Sim/Lab
+usd_path: ../../../workplan/bowl/bowl.usd
+
+# Scale factor (mesh units to meters)
+# Set to 1.0 if mesh is already in meters
+scale: 1.0
+
+# Physical properties
+physics:
+  mass: 0.15  # kg (estimated for ceramic bowl)
+  friction: 0.5
+  restitution: 0.1
+
+# Grasp generation parameters
+grasp:
+  # Surface sampling for grasp initialization
+  num_surface_samples: 2000
+
+  # Allowed approach angles (relative to surface normal)
+  max_approach_angle: 60  # degrees

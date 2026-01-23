@@ -341,6 +341,7 @@ class SimulationEvaluator(DataEvaluator):
                     actor_name='robot',
                     actor_actions=target_qpos,
                 )
+                print("Stepping simulator")
                 self._simulator.step()
             # enable gravity after the fourth waypoint (squeeze)
             if i == 3:

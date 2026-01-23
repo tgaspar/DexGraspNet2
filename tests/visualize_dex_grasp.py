@@ -56,9 +56,15 @@ if __name__ == '__main__':
             continue
         if not '000' in p:
             continue
+        # data/dex_grasps_new/scene_0001/leap_hand/000.npz
         data = np.load(os.path.join(path, p))
-        idxs = np.random.randint(0, len(data['point']), args.grasp_num)
+        # idxs = np.random.randint(0, len(data['point']), args.grasp_num)
+        idxs = [512]
         data = {k: data[k][idxs] for k in data.files}
+        print(data)
+        # 'point': array([0.090271  , 0.15258789, 0.39086914]
+        # 'translation': array([0.12182617, 0.20507812, 0.4230957 ]
+        # exit()
         for i in range(args.grasp_num):
             trans = torch.from_numpy(np.einsum('ba,b->a', camera_pose_wrt_cam0[:3, :3], data['translation'][i] - camera_pose_wrt_cam0[:3, 3]))
             rot = torch.from_numpy(np.einsum('ba,bc->ac', camera_pose_wrt_cam0[:3, :3], data['rotation'][i]))
@@ -70,6 +76,7 @@ if __name__ == '__main__':
             qpos = {k: torch.from_numpy(data[k][[i]]).float() for k in data.keys()}
             robot_plotly += vis.robot_plotly(trans[None].float(), rot[None].float(), qpos, opacity=0.5, color=random.choice(px.colors.sequential.Plasma))
             pc_plotly += vis.pc_plotly(point[None].float(), size=5, color='red')
+            pc_plotly += vis.pc_plotly(trans[None].float(), size=5, color='green')
     plotly = view_plotly + robot_plotly + pc_plotly
 
     vis.show(plotly, args.output_path)

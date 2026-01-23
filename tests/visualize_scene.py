@@ -79,4 +79,5 @@ if __name__ == '__main__':
             aspectmode='data',
         ),
     )
-    fig.show()
+    #fig.show()
+    fig.write_html("grasp_visualization.html")

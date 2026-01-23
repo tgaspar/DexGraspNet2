@@ -13,7 +13,8 @@ if __name__ == '__main__':
         default='experiments/dex_ours/ckpt/ckpt_50000.pth')
     args = parser.parse_args()
 
-    for dataset in ['graspnet', 'acronym']:
+    # for dataset in ['graspnet', 'acronym']:
+    for dataset in ['graspnet']:
         args.dataset = dataset
 
         result_path = os.path.join(os.path.dirname(os.path.dirname(args.ckpt_path)), 'results') if args.dataset == 'graspnet' else os.path.join(os.path.dirname(os.path.dirname(args.ckpt_path)), 'results_acronym')

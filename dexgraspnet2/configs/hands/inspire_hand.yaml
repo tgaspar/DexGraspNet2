@@ -1,0 +1,84 @@
+# Inspire Hand (Right) Configuration for DexGraspNet2
+# 6 DoF dexterous hand with coupled (mimic) joints
+
+name: inspire_hand
+
+# Paths (relative to this file or absolute)
+urdf_path: ../../../third_party/dex-urdf/robots/hands/inspire_hand/inspire_hand_right.urdf
+meta_path: ./inspire_hand_meta.yaml
+
+# Degrees of freedom (actuated joints only)
+# The Inspire Hand has 6 actuated joints and 5 mimic (coupled) joints
+num_dofs: 6
+
+# Actuated joint names in network output order
+# Note: intermediate joints are mimic joints coupled to proximal joints
+joint_names:
+  # Thumb (2 DoF)
+  - thumb_proximal_yaw_joint
+  - thumb_proximal_pitch_joint
+  # Fingers (4 DoF - one per finger)
+  - index_proximal_joint
+  - middle_proximal_joint
+  - ring_proximal_joint
+  - pinky_proximal_joint
+
+# Joint limits (radians) from URDF
+joint_lower_limits:
+  # Thumb
+  - 0.0
+  - 0.0
+  # Fingers
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+
+joint_upper_limits:
+  # Thumb
+  - 1.308
+  - 0.6
+  # Fingers
+  - 1.47
+  - 1.47
+  - 1.47
+  - 1.47
+
+# Fingertip links (for contact detection)
+fingertip_links:
+  - thumb_tip
+  - index_tip
+  - middle_tip
+  - ring_tip
+  - pinky_tip
+
+# Base/wrist link name
+wrist_link: hand_base_link
+
+# Mimic joint configuration (for forward kinematics)
+# These joints are coupled to actuated joints
+mimic_joints:
+  thumb_intermediate_joint:
+    parent: thumb_proximal_pitch_joint
+    multiplier: 1.334
+    offset: 0.0
+  thumb_distal_joint:
+    parent: thumb_proximal_pitch_joint
+    multiplier: 0.667
+    offset: 0.0
+  index_intermediate_joint:
+    parent: index_proximal_joint
+    multiplier: 1.06399
+    offset: -0.04545
+  middle_intermediate_joint:
+    parent: middle_proximal_joint
+    multiplier: 1.06399
+    offset: -0.04545
+  ring_intermediate_joint:
+    parent: ring_proximal_joint
+    multiplier: 1.06399
+    offset: -0.04545
+  pinky_intermediate_joint:
+    parent: pinky_proximal_joint
+    multiplier: 1.06399
+    offset: -0.04545

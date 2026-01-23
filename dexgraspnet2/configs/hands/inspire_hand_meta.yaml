@@ -1,0 +1,25 @@
+# Meta configuration for Inspire Hand
+# Specifies adjacency pairs for self-collision detection
+
+adjacency_pairs:
+  # Thumb chain
+  - [hand_base_link, thumb_proximal_base]
+  - [thumb_proximal_base, thumb_proximal]
+  - [thumb_proximal, thumb_intermediate]
+  - [thumb_intermediate, thumb_distal]
+
+  # Index chain
+  - [hand_base_link, index_proximal]
+  - [index_proximal, index_intermediate]
+
+  # Middle chain
+  - [hand_base_link, middle_proximal]
+  - [middle_proximal, middle_intermediate]
+
+  # Ring chain
+  - [hand_base_link, ring_proximal]
+  - [ring_proximal, ring_intermediate]
+
+  # Pinky chain
+  - [hand_base_link, pinky_proximal]
+  - [pinky_proximal, pinky_intermediate]
