@@ -287,7 +287,7 @@ class GraspValidator:
 
     def _get_finger_contacts(self) -> np.ndarray:
         """
-        Check if fingers have contact forces (indicating contact with object).
+        Check if fingers have contact forces (vectorized).
 
         Returns:
             Tuple of (has_contact, contact_counts):
@@ -296,37 +296,45 @@ class GraspValidator:
         """
         self._gym.refresh_net_contact_force_tensor(self._sim)
 
-        # Single GPU->CPU transfer to avoid sync bottleneck
-        contact_forces_cpu = self._contact_force_tensor.cpu().numpy()
+        # Build flat index tensor for all finger bodies across all envs
+        # This is done once and cached if not already
+        if not hasattr(self, '_finger_body_indices_flat'):
+            self._finger_body_indices_flat = torch.tensor(
+                [idx for indices in self._finger_body_indices for idx in indices],
+                dtype=torch.long, device=self.device)
+            self._finger_env_ids = torch.tensor(
+                [i for i, indices in enumerate(self._finger_body_indices) for _ in indices],
+                dtype=torch.long, device=self.device)
+            self._num_fingers_per_env = len(self._finger_body_local_idx)
 
-        has_contact = np.zeros(self.num_envs, dtype=bool)
-        contact_counts = np.zeros(self.num_envs, dtype=int)
+        # Vectorized: get all finger forces at once
+        finger_forces = self._contact_force_tensor[self._finger_body_indices_flat]  # (total_fingers, 3)
+        force_magnitudes = finger_forces.norm(dim=1)  # (total_fingers,)
+        has_meaningful_contact = force_magnitudes > 0.1  # Threshold
 
-        for i in range(self.num_envs):
-            for finger_idx in self._finger_body_indices[i]:
-                force = contact_forces_cpu[finger_idx]  # CPU indexing (fast)
-                force_magnitude = np.linalg.norm(force)
-                if force_magnitude > 0.1:  # Threshold for meaningful contact
-                    contact_counts[i] += 1
-            has_contact[i] = contact_counts[i] >= 2  # At least 2 finger contacts
+        # Count contacts per environment using scatter_add
+        contact_counts = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
+        contact_counts.scatter_add_(0, self._finger_env_ids, has_meaningful_contact.long())
 
-        return has_contact, contact_counts
+        # Convert to numpy
+        contact_counts_np = contact_counts.cpu().numpy()
+        has_contact = contact_counts_np >= 2
+
+        return has_contact, contact_counts_np
 
     def _get_hand_height(self) -> np.ndarray:
-        """Get hand wrist/palm height (z position of first robot body after virtual chain)."""
+        """Get hand wrist/palm height (vectorized)."""
         self._gym.refresh_rigid_body_state_tensor(self._sim)
 
-        # Single GPU->CPU transfer to avoid sync bottleneck
-        rb_state_cpu = self._rigid_body_state_tensor.cpu().numpy()
+        # Build index tensor for first finger body per env (cached)
+        if not hasattr(self, '_hand_ref_body_indices'):
+            self._hand_ref_body_indices = torch.tensor(
+                [indices[0] if indices else 0 for indices in self._finger_body_indices],
+                dtype=torch.long, device=self.device)
 
-        heights = np.zeros(self.num_envs)
-        for i in range(self.num_envs):
-            # Use first finger body as reference for hand height
-            if self._finger_body_indices[i]:
-                body_idx = self._finger_body_indices[i][0]
-                heights[i] = rb_state_cpu[body_idx, 2]  # CPU indexing (fast)
-
-        return heights
+        # Vectorized: get z-positions of reference bodies
+        heights = self._rigid_body_state_tensor[self._hand_ref_body_indices, 2]
+        return heights.cpu().numpy()
     
     def _rotation_to_euler(self, R: np.ndarray) -> np.ndarray:
         """Convert rotation matrix to Euler XYZ (intrinsic) for URDF joint chain."""
@@ -369,11 +377,10 @@ class GraspValidator:
         return targets
 
     def _set_dof_targets_all(self, targets_per_env: np.ndarray):
-        """Set DOF targets for all environments."""
-        for i in range(self.num_envs):
-            base = i * self._num_dofs
-            for j in range(self._num_dofs):
-                self._dof_targets[base + j] = float(targets_per_env[i, j])
+        """Set DOF targets for all environments (vectorized)."""
+        # Convert to tensor and flatten in one operation
+        targets_flat = torch.from_numpy(targets_per_env.astype(np.float32)).to(self.device).reshape(-1)
+        self._dof_targets[:] = targets_flat
 
     def _step(self):
         """Step simulation."""
@@ -387,29 +394,32 @@ class GraspValidator:
             self._gym.sync_frame_time(self._sim)
 
     def _get_object_xyz(self) -> np.ndarray:
-        """Get current object positions."""
+        """Get current object positions (vectorized)."""
         self._gym.refresh_actor_root_state_tensor(self._sim)
 
-        # Single GPU->CPU transfer to avoid sync bottleneck
-        root_cpu = self._root_tensor.cpu().numpy()
-
-        positions = np.zeros((self.num_envs, 3))
-        for i in range(self.num_envs):
-            idx = self._object_indices[i]
-            positions[i] = root_cpu[idx, :3]  # Get x,y,z in one indexing op (fast)
-        return positions
+        # Vectorized: index all object positions at once
+        positions = self._root_tensor[self._object_indices, :3]
+        return positions.cpu().numpy()
 
     def _get_object_rot_mat(self) -> np.ndarray:
-        """Get current object rotation matrices."""
+        """Get current object rotation matrices (vectorized)."""
         self._gym.refresh_actor_root_state_tensor(self._sim)
 
-        # Single GPU->CPU transfer to avoid sync bottleneck
-        root_cpu = self._root_tensor.cpu().numpy()
+        # Get all quaternions at once
+        quats = self._root_tensor[self._object_indices, 3:7].cpu().numpy()
 
+        # Vectorized quaternion to rotation matrix
         rotations = np.zeros((self.num_envs, 3, 3))
-        for i in range(self.num_envs):
-            quat = root_cpu[self._object_indices[i], 3:7]  # CPU indexing (fast)
-            rotations[i] = quat_to_rot_matrix(quat)
+        qx, qy, qz, qw = quats[:, 0], quats[:, 1], quats[:, 2], quats[:, 3]
+        rotations[:, 0, 0] = 1 - 2*(qy**2 + qz**2)
+        rotations[:, 0, 1] = 2*(qx*qy - qz*qw)
+        rotations[:, 0, 2] = 2*(qx*qz + qy*qw)
+        rotations[:, 1, 0] = 2*(qx*qy + qz*qw)
+        rotations[:, 1, 1] = 1 - 2*(qx**2 + qz**2)
+        rotations[:, 1, 2] = 2*(qy*qz - qx*qw)
+        rotations[:, 2, 0] = 2*(qx*qz - qy*qw)
+        rotations[:, 2, 1] = 2*(qy*qz + qx*qw)
+        rotations[:, 2, 2] = 1 - 2*(qx**2 + qy**2)
         return rotations
 
     def _get_object_heights(self) -> np.ndarray:
@@ -420,29 +430,29 @@ class GraspValidator:
         return heights
 
     def _reset_simulation(self, pregrasp_targets: np.ndarray):
-        """Reset simulation to initial state with robot at pregrasp."""
+        """Reset simulation to initial state with robot at pregrasp (vectorized)."""
         self._gym.refresh_actor_root_state_tensor(self._sim)
         self._gym.refresh_dof_state_tensor(self._sim)
 
-        # Reset objects
-        for i in range(self.num_envs):
-            self._root_tensor[self._object_indices[i], :3] = torch.tensor(
-                self._object_init_pos, device=self.device)
-            self._root_tensor[self._object_indices[i], 3:7] = torch.tensor(
-                self._object_init_quat, device=self.device)
-            self._root_tensor[self._object_indices[i], 7:] = 0
+        # Reset objects (vectorized)
+        init_pos = torch.tensor(self._object_init_pos, device=self.device, dtype=torch.float32)
+        init_quat = torch.tensor(self._object_init_quat, device=self.device, dtype=torch.float32)
+        self._root_tensor[self._object_indices, :3] = init_pos.unsqueeze(0).expand(self.num_envs, -1)
+        self._root_tensor[self._object_indices, 3:7] = init_quat.unsqueeze(0).expand(self.num_envs, -1)
+        self._root_tensor[self._object_indices, 7:] = 0
 
         self._gym.set_actor_root_state_tensor_indexed(
             self._sim, gymtorch.unwrap_tensor(self._root_tensor),
             gymtorch.unwrap_tensor(self._object_indices), self.num_envs)
 
-        # Set robot DOF positions AND targets to pregrasp
-        for i in range(self.num_envs):
-            base = i * self._num_dofs
-            for j in range(self._num_dofs):
-                self._dof_state_tensor[base + j, 0] = pregrasp_targets[i, j]  # position
-                self._dof_state_tensor[base + j, 1] = 0.0  # velocity
-                self._dof_targets[base + j] = pregrasp_targets[i, j]
+        # Set robot DOF positions AND targets to pregrasp (vectorized)
+        pregrasp_tensor = torch.from_numpy(pregrasp_targets.astype(np.float32)).to(self.device)
+        pregrasp_flat = pregrasp_tensor.reshape(-1)
+
+        # DOF state tensor is (num_envs * num_dofs, 2) - column 0 is position, column 1 is velocity
+        self._dof_state_tensor[:, 0] = pregrasp_flat
+        self._dof_state_tensor[:, 1] = 0.0
+        self._dof_targets[:] = pregrasp_flat
 
         self._gym.set_dof_state_tensor(self._sim, gymtorch.unwrap_tensor(self._dof_state_tensor))
 
@@ -538,22 +548,22 @@ class GraspValidator:
         logger.info(f"At pregrasp - object heights: {self._get_object_heights()}")
 
         # === PHASE 2: Approach (pregrasp -> grasp position, fingers stay open) ===
+        # Vectorized interpolation: pre-compute index arrays
+        virtual_idx = np.array(self._virtual_dof_idx)
         approach_targets = pregrasp_targets.copy()
         for t in np.linspace(0, 1, cfg.approach_steps):
-            # Interpolate position only, keep fingers open
-            for i in range(batch_size):
-                for j in self._virtual_dof_idx:
-                    approach_targets[i, j] = (1-t) * pregrasp_targets[i, j] + t * grasp_targets[i, j]
+            # Vectorized: interpolate all virtual DOFs at once
+            approach_targets[:, virtual_idx] = (1-t) * pregrasp_targets[:, virtual_idx] + t * grasp_targets[:, virtual_idx]
             self._set_dof_targets_all(approach_targets)
             self._step()
         logger.info(f"After approach: {self._get_object_heights()}")
 
         # === PHASE 3: Close fingers ===
+        finger_idx = np.array(self._finger_dof_idx)
         close_targets = approach_targets.copy()
         for t in np.linspace(0, 1, cfg.grasp_steps):
-            for i in range(batch_size):
-                for j in self._finger_dof_idx:
-                    close_targets[i, j] = t * grasp_targets[i, j]
+            # Vectorized: interpolate all finger DOFs at once
+            close_targets[:, finger_idx] = t * grasp_targets[:, finger_idx]
             self._set_dof_targets_all(close_targets)
             self._step()
         logger.info(f"After grasp: {self._get_object_heights()}")
@@ -577,17 +587,17 @@ class GraspValidator:
         # === PHASE 5: Lift (gravity already ON) ===
         # Track contacts during lift
         contact_during_lift = np.zeros(batch_size, dtype=bool)
+        pos_idx = np.array(self._virtual_dof_idx[:3])  # XYZ position DOFs
 
-        for t in np.linspace(0, 1, cfg.lift_steps):
+        for step, t in enumerate(np.linspace(0, 1, cfg.lift_steps)):
             current = squeeze_targets.copy()
-            for i in range(batch_size):
-                for j in self._virtual_dof_idx[:3]:  # Only interpolate position
-                    current[i, j] = (1-t) * squeeze_targets[i, j] + t * lift_targets[i, j]
+            # Vectorized: interpolate all position DOFs at once
+            current[:, pos_idx] = (1-t) * squeeze_targets[:, pos_idx] + t * lift_targets[:, pos_idx]
             self._set_dof_targets_all(current)
             self._step()
 
             # Check contacts during lift (sample every 10 steps)
-            if int(t * cfg.lift_steps) % 10 == 0:
+            if step % 10 == 0:
                 has_contact, _ = self._get_finger_contacts()
                 contact_during_lift |= has_contact
 

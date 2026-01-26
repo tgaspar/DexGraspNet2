@@ -18,6 +18,19 @@ from dexgraspnet2.utils.geometric_conversions import (
     transform_point,
     transform_points,
 )
+from dexgraspnet2.utils.config_utils import (
+    DotDict,
+    to_dot_dict,
+    to_dict,
+    load_yaml,
+    save_yaml,
+    merge_configs,
+    set_seed,
+)
+from dexgraspnet2.utils.logging import (
+    setup_logging,
+    get_logger,
+)
 
 __all__ = [
     # Point cloud utilities
@@ -36,4 +49,15 @@ __all__ = [
     "quaternion_inverse",
     "transform_point",
     "transform_points",
+    # Config utilities
+    "DotDict",
+    "to_dot_dict",
+    "to_dict",
+    "load_yaml",
+    "save_yaml",
+    "merge_configs",
+    "set_seed",
+    # Logging
+    "setup_logging",
+    "get_logger",
 ]
