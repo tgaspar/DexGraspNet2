@@ -67,21 +67,48 @@ def to_voxel_center(pc: torch.Tensor, voxel_size: float) -> torch.Tensor:
     return (torch.floor(pc / voxel_size) + 0.5) * voxel_size
 
 
+# Use the nflows ResidualNet directly to ensure exact compatibility with the
+# original implementation. The original src/network/condition.py imports from nflows.
+# Our previous custom implementation had architectural differences (extra ReLUs,
+# post-activation instead of pre-activation) that caused wrong joint predictions.
+from nflows.nn.nets.resnet import ResidualNet
+
+
 class ConditionalTransform(nn.Module):
     """
-    Conditional linear transformation for ISA model.
+    Conditional transformation using nflows ResidualNet.
 
-    Maps features to output space using a linear layer.
+    A MLP with 2 residual blocks for predicting joint angles or other outputs.
+    Uses the exact same architecture as src/network/condition.py.
+
+    Architecture (from nflows):
+        input -> Linear -> [ResidualBlock x num_blocks] -> Linear -> output
+
+    Where each ResidualBlock uses pre-activation:
+        x -> ReLU -> Linear -> ReLU -> Dropout -> Linear -> + x
     """
 
-    def __init__(self, input_dim: int, output_dim: int):
+    def __init__(
+        self,
+        input_dim: int,
+        output_dim: int,
+        hidden_dim: int = 64,
+        num_blocks: int = 2,
+    ):
         """Initialize the transformation."""
         super().__init__()
-        self.linear = nn.Linear(input_dim, output_dim)
+        self.net = ResidualNet(
+            in_features=input_dim,
+            out_features=output_dim,
+            hidden_features=hidden_dim,
+            num_blocks=num_blocks,
+            dropout_probability=0.0,
+            use_batch_norm=False,
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Apply transformation."""
-        return self.linear(x)
+        return self.net(x)
 
 
 class GraspnessModel(nn.Module):
@@ -208,12 +235,22 @@ class GraspnessModel(nn.Module):
             self.rot_type = getattr(diff_config, "rot_type", "svd")
             diff_dict = {k: getattr(diff_config, k) for k in diff_config}
             # Handle nested scheduler config (legacy format)
-            if "scheduler" in diff_dict and isinstance(diff_dict["scheduler"], _DictConfig):
-                scheduler_dict = {k: getattr(diff_dict["scheduler"], k) for k in diff_dict["scheduler"]}
+            if "scheduler" in diff_dict and isinstance(
+                diff_dict["scheduler"], _DictConfig
+            ):
+                scheduler_dict = {
+                    k: getattr(diff_dict["scheduler"], k)
+                    for k in diff_dict["scheduler"]
+                }
                 diff_dict.update(scheduler_dict)
                 del diff_dict["scheduler"]
-            diff_config = DiffusionConfig(**{k: v for k, v in diff_dict.items()
-                                             if k in DiffusionConfig.__dataclass_fields__})
+            diff_config = DiffusionConfig(
+                **{
+                    k: v
+                    for k, v in diff_dict.items()
+                    if k in DiffusionConfig.__dataclass_fields__
+                }
+            )
         else:
             self.rot_type = getattr(diff_config, "rot_type", "svd")
 
@@ -241,14 +278,17 @@ class GraspnessModel(nn.Module):
         """Initialize ISA (direct prediction) model."""
         assert self._dist_joint, "ISA model requires dist_joint=1"
         self.joint_mlp = ConditionalTransform(
-            self._feature_dim, self._joint_num + 4 + 3  # quat + trans + joints
+            self._feature_dim,
+            self._joint_num + 4 + 3,  # quat + trans + joints
         )
 
     def _init_cvae_model(self, config):
         """Initialize CVAE model (placeholder)."""
         assert self._dist_joint, "CVAE model requires dist_joint=1"
         # CVAE implementation would go here
-        raise NotImplementedError("CVAE model not yet implemented in refactored version")
+        raise NotImplementedError(
+            "CVAE model not yet implemented in refactored version"
+        )
 
     def get_feature(self, data: Dict[str, torch.Tensor]) -> torch.Tensor:
         """
@@ -270,9 +310,7 @@ class GraspnessModel(nn.Module):
             data=data,
         )
 
-    def pred_score(
-        self, feature: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    def pred_score(self, feature: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Predict objectness and graspness scores.
 
@@ -408,7 +446,9 @@ class GraspnessModel(nn.Module):
             joints = joints / self._joint_scale
 
         # Convert delta translation to absolute
-        trans = self.to_voxel_center(seed_points[:, None]) + delta_trans / self._trans_scale
+        trans = (
+            self.to_voxel_center(seed_points[:, None]) + delta_trans / self._trans_scale
+        )
 
         return rot, trans, joints, log_prob
 
@@ -475,22 +515,27 @@ class GraspnessModel(nn.Module):
         gt_graspness = data["graspness"]
 
         # Objectness loss (cross-entropy)
-        loss_objectness = self.objectness_loss(
-            objectness.reshape(-1, 2), gt_objectness.reshape(-1)
-        ).reshape(batch_size, point_num).mean(dim=1)
+        loss_objectness = (
+            self.objectness_loss(objectness.reshape(-1, 2), gt_objectness.reshape(-1))
+            .reshape(batch_size, point_num)
+            .mean(dim=1)
+        )
 
         # Graspness loss (only on object points)
         loss_graspness = self.graspness_loss(
             graspness * gt_objectness, gt_graspness * gt_objectness
         ).sum(dim=1) / (gt_objectness.sum(dim=1) + 1e-6)
-        loss_graspness = loss_graspness * data["has_graspness"].reshape(*loss_graspness.shape)
+        loss_graspness = loss_graspness * data["has_graspness"].reshape(
+            *loss_graspness.shape
+        )
 
         # Metrics
-        acc_objectness = (objectness.argmax(dim=-1) == gt_objectness).float().mean(dim=-1)
-        abs_graspness = (
-            torch.abs(graspness * gt_objectness - gt_graspness * gt_objectness).sum(dim=-1)
-            / (gt_objectness.sum(dim=1) + 1e-6)
+        acc_objectness = (
+            (objectness.argmax(dim=-1) == gt_objectness).float().mean(dim=-1)
         )
+        abs_graspness = torch.abs(
+            graspness * gt_objectness - gt_graspness * gt_objectness
+        ).sum(dim=-1) / (gt_objectness.sum(dim=1) + 1e-6)
 
         # Get features at grasp center points
         centers = data["trans"]
@@ -514,8 +559,14 @@ class GraspnessModel(nn.Module):
             est = self.joint_mlp(sel_point_feature)
             est_quat, est_euc = est[:, :4], est[:, 4:]
             est_rot = pttf.quaternion_to_matrix(est_quat)
-            loss_euc = (est_euc - euc).abs().mean(dim=-1).reshape(batch_size, -1).mean(dim=-1)
-            loss_quat = pttf.so3_relative_angle(est_rot, rot, eps=1e-2).reshape(batch_size, -1).mean(dim=-1)
+            loss_euc = (
+                (est_euc - euc).abs().mean(dim=-1).reshape(batch_size, -1).mean(dim=-1)
+            )
+            loss_quat = (
+                pttf.so3_relative_angle(est_rot, rot, eps=1e-2)
+                .reshape(batch_size, -1)
+                .mean(dim=-1)
+            )
 
         # Joint loss (if not predicted via diffusion)
         gt_joints = data["qpos"]
@@ -527,17 +578,27 @@ class GraspnessModel(nn.Module):
             est_joints = self.joint_mlp(
                 torch.cat([sel_point_feature, rot.reshape(-1, 9), trans], dim=-1)
             ).reshape(*gt_joints.shape)
-            loss_joint = self.joint_loss(
-                est_joints, gt_joints * self._joint_scale
-            ).mean(dim=-1).mean(dim=-1)
+            loss_joint = (
+                self.joint_loss(est_joints, gt_joints * self._joint_scale)
+                .mean(dim=-1)
+                .mean(dim=-1)
+            )
             abs_dis_joint = torch.abs(
                 est_joints[..., 0] / self._joint_scale - gt_joints[..., 0]
             ).mean(dim=-1)
 
         # Compute total loss
-        weight = self.config.get("weight", {}) if isinstance(self.config, dict) else self.config
-        w_obj = getattr(weight, "objectness", 1.0) if hasattr(weight, "objectness") else 1.0
-        w_grasp = getattr(weight, "graspness", 1.0) if hasattr(weight, "graspness") else 1.0
+        weight = (
+            self.config.get("weight", {})
+            if isinstance(self.config, dict)
+            else self.config
+        )
+        w_obj = (
+            getattr(weight, "objectness", 1.0) if hasattr(weight, "objectness") else 1.0
+        )
+        w_grasp = (
+            getattr(weight, "graspness", 1.0) if hasattr(weight, "graspness") else 1.0
+        )
 
         loss = w_obj * loss_objectness + w_grasp * loss_graspness
 
@@ -556,7 +617,11 @@ class GraspnessModel(nn.Module):
             result_dict["abs_dis_joint"] = abs_dis_joint
 
         if self._model_type == "graspness_diffusion":
-            w_diff = getattr(weight, "diffusion", 10.0) if hasattr(weight, "diffusion") else 10.0
+            w_diff = (
+                getattr(weight, "diffusion", 10.0)
+                if hasattr(weight, "diffusion")
+                else 10.0
+            )
             loss = loss + w_diff * loss_diffusion
             result_dict["loss_diffusion"] = loss_diffusion
         elif self._model_type == "graspness_isa":
@@ -590,7 +655,9 @@ class GraspnessModel(nn.Module):
         if graspable.sum() == 0:
             raise ValueError("No graspable points")
         elif graspable.sum() <= k:
-            indices = torch.randint(0, graspable.sum(), (k,), device=graspable.device)[None]
+            indices = torch.randint(0, graspable.sum(), (k,), device=graspable.device)[
+                None
+            ]
             seed_point = pc[graspable][indices[0]][None]
         else:
             seed_point, indices = sample_farthest_points(
@@ -659,16 +726,20 @@ class GraspnessModel(nn.Module):
                     threshold = graspness_obj[int(graspness_obj.size(0) * 0.05)]
                     graspable = (seg == obj_id) & (graspness[i] >= threshold)
 
-                    seed_point, indices = self.sample_points(pc_cuda[i], graspable, obj_k[j])
+                    seed_point, indices = self.sample_points(
+                        pc_cuda[i], graspable, obj_k[j]
+                    )
                     features_list.append(feature[i, graspable][indices][0])
                     seed_points_list.append(seed_point[0])
                     graspnesses_list.append(graspness[i, graspable][indices][0])
                     obj_indices[-1] += [obj_id] * obj_k[j]
             else:
                 # Sample from top graspness points
-                threshold = graspness[i].sort(descending=True).values[
-                    int(graspness[i].size(0) * ratio)
-                ]
+                threshold = (
+                    graspness[i]
+                    .sort(descending=True)
+                    .values[int(graspness[i].size(0) * ratio)]
+                )
                 graspable = graspness[i] > np.log(1e-2)
                 if graspable.sum() == 0:
                     graspable = graspness[i] >= threshold

@@ -39,7 +39,8 @@ def parse_args() -> argparse.Namespace:
 
     # Config file
     parser.add_argument(
-        "--config", "-c",
+        "--config",
+        "-c",
         type=str,
         default=None,
         help="Path to configuration YAML file",
@@ -173,6 +174,7 @@ def build_configs(args: argparse.Namespace) -> tuple:
         except Exception:
             training_config = load_legacy_config(config_path)
             from dexgraspnet2.configs.model_config import load_legacy_model_config
+
             model_config = load_legacy_model_config(config_path)
     else:
         # Use defaults
@@ -237,7 +239,7 @@ def main():
     """Main training entry point."""
     args = parse_args()
 
-    # Setup logging
+    # Setup logging - initially to console only
     log_level = logging.DEBUG if args.debug else logging.INFO
     setup_logging(level=log_level)
 
@@ -247,6 +249,14 @@ def main():
     try:
         # Build configs
         training_config, model_config = build_configs(args)
+
+        # Setup file logging now that we know the experiment name
+        log_file = (
+            Path("experiments") / training_config.exp_name / "log" / "training.log"
+        )
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        setup_logging(level=log_level, log_file=log_file)
+        logger.info(f"Logging to file: {log_file}")
 
         logger.info(f"Experiment: {training_config.exp_name}")
         logger.info(f"Model type: {model_config.type}")
@@ -259,6 +269,7 @@ def main():
 
         # Parse device
         import torch
+
         if args.device is not None:
             device = torch.device(args.device)
         else:

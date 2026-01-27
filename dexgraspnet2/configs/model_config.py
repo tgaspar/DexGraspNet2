@@ -167,8 +167,8 @@ class ModelConfig:
     feature_dim: int = 512
     joint_num: int = 16
     trans_scale: float = 25.0  # ktrans from paper Table 11
-    joint_scale: float = 10.0
-    dist_joint: int = 1
+    joint_scale: float = 1.0  # Match OURS checkpoint (scale=1)
+    dist_joint: int = 0  # 0 = separate joint MLP, 1 = joints in diffusion
     voxel_size: float = 0.005
     backbone: BackboneConfig = field(default_factory=BackboneConfig)
     diffusion: DiffusionConfig = field(default_factory=DiffusionConfig)

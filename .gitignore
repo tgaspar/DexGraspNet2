@@ -32,3 +32,18 @@ tests/demo_grasp_verification_simple.py
 tests/demo_isaac_gym_gui.py
 tests/test_extra_params.py
 tests/test_import_order.py
+
+# Env!
+.env
+
+# Any kind of archive files
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+*.gz
+
+# Log files
+*.log

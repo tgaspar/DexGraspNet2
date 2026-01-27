@@ -12,7 +12,6 @@ The original DexGraspNet2.0 requires a complex environment setup with specific v
 
 - **Docker-first approach**: Single container with all dependencies pre-configured
 - **Refactored training pipeline**: Modular, configurable training with W&B integration
-- **Vectorized simulation**: Optimized Isaac Gym batch validation (32 envs run as fast as 1)
 - **Simplified entry points**: Clear examples for visualization, validation, and training
 
 ## Repository Structure
