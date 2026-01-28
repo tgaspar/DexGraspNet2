@@ -137,6 +137,36 @@ The validation runs a 5-stage grasp trajectory:
 4. **Squeeze**: Apply additional force
 5. **Lift**: Lift object and check success (object rises ≥3cm)
 
+### Evaluate Predicted Grasps (Perception & Inference)
+
+To verify the full perception and inference pipeline (spawning objects from scene data, capturing point clouds, running the model, and generating grasps):
+
+```bash
+docker run --rm --gpus all \
+  -e DISPLAY=$DISPLAY \
+  -v /tmp/.X11-unix:/tmp/.X11-unix \
+  -v $(pwd):/root/DexGraspNet2 \
+  -v /mnt/datasets/dexgraspnet2/data:/root/DexGraspNet2/data \
+  -w /root/DexGraspNet2 \
+  -e PYTHONPATH=/root/DexGraspNet2 \
+  -e NVIDIA_DRIVER_CAPABILITIES=all \
+  -e VK_ICD_FILENAMES=/etc/vulkan/icd.d/nvidia_icd.json \
+  -e __GLX_VENDOR_LIBRARY_NAME=nvidia \
+  dexgraspnet2:latest \
+  bash -c "source /opt/miniconda3/etc/profile.d/conda.sh && conda activate py38 && \
+    python tests/evaluate_predicted_grasps.py \
+      --ckpt_path data/DexGraspNet2.0-ckpts/OURS/ckpt/ckpt_50000.pth \
+      --scene_id scene_0220 \
+      --num_grasps 10 \
+      --output_vis tests/output/eval_vis.html"
+```
+
+This script:
+1. Loads the specified scene geometry.
+2. Captures a depth image and converts it to a point cloud (using reference camera pose).
+3. Runs the grasp generation model.
+4. Outputs an HTML visualization of the scene and predicted grasps in the camera frame.
+
 ### Train Model
 
 Train the diffusion-based grasp prediction model:
