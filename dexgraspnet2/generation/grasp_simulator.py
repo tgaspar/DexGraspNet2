@@ -17,8 +17,8 @@ from typing import List, Optional, Tuple
 import numpy as np
 
 # Set environment variables before importing isaacgym
-os.environ.setdefault('VK_ICD_FILENAMES', '/etc/vulkan/icd.d/nvidia_icd.json')
-os.environ.setdefault('__GLX_VENDOR_LIBRARY_NAME', 'nvidia')
+os.environ.setdefault("VK_ICD_FILENAMES", "/etc/vulkan/icd.d/nvidia_icd.json")
+os.environ.setdefault("__GLX_VENDOR_LIBRARY_NAME", "nvidia")
 
 from isaacgym import gymapi, gymtorch
 import torch
@@ -47,16 +47,16 @@ class SimulationConfig:
     num_velocity_iterations: int = 2
 
     # Grasp validation params (following original paper's 5-waypoint system)
-    pregrasp_steps: int = 30     # Steps at pregrasp position
-    approach_steps: int = 60     # Steps to approach (pregrasp -> cover)
-    grasp_steps: int = 60        # Steps to close fingers
-    squeeze_steps: int = 30      # Additional squeeze
-    lift_steps: int = 90         # Steps to lift
-    settle_steps: int = 30       # Steps to let physics settle
+    pregrasp_steps: int = 30  # Steps at pregrasp position
+    approach_steps: int = 60  # Steps to approach (pregrasp -> cover)
+    grasp_steps: int = 60  # Steps to close fingers
+    squeeze_steps: int = 30  # Additional squeeze
+    lift_steps: int = 90  # Steps to lift
+    settle_steps: int = 30  # Steps to let physics settle
 
     # Distances
     pregrasp_distance: float = 0.10  # 10cm back from grasp pose
-    lift_height: float = 0.10        # Lift 10cm
+    lift_height: float = 0.10  # Lift 10cm
     success_threshold: float = 0.03  # Object must rise 3cm (paper: 3cm above initial)
 
 
@@ -81,8 +81,12 @@ class GraspSimulator:
 
     # Virtual 6-DOF joint names in order
     VIRTUAL_JOINT_NAMES = [
-        "x_joint", "y_joint", "z_joint",
-        "x_rotation_joint", "y_rotation_joint", "z_rotation_joint"
+        "x_joint",
+        "y_joint",
+        "z_joint",
+        "x_rotation_joint",
+        "y_rotation_joint",
+        "z_rotation_joint",
     ]
 
     def __init__(
@@ -213,9 +217,7 @@ class GraspSimulator:
             else:
                 cam_pos = gymapi.Vec3(0.5, -0.5, 0.5)
                 cam_target = gymapi.Vec3(0.0, 0.0, 0.1)
-                self._gym.viewer_camera_look_at(
-                    self._viewer, None, cam_pos, cam_target
-                )
+                self._gym.viewer_camera_look_at(self._viewer, None, cam_pos, cam_target)
 
         # Load robot asset (using _free variant)
         robot_asset = self._load_robot_asset()
@@ -276,7 +278,7 @@ class GraspSimulator:
             logger.info("Created box object (no mesh provided)")
         else:
             mesh_path = Path(mesh_path)
-            if mesh_path.suffix.lower() == '.urdf':
+            if mesh_path.suffix.lower() == ".urdf":
                 object_asset = self._gym.load_asset(
                     self._sim, str(mesh_path.parent), mesh_path.name, asset_options
                 )
@@ -354,19 +356,14 @@ class GraspSimulator:
             self._object_handles.append(object_handle)
 
             # Set object friction
-            shape_props = self._gym.get_actor_rigid_shape_properties(
-                env, object_handle
-            )
+            shape_props = self._gym.get_actor_rigid_shape_properties(env, object_handle)
             for prop in shape_props:
                 prop.friction = self.config.friction
-            self._gym.set_actor_rigid_shape_properties(
-                env, object_handle, shape_props
-            )
+            self._gym.set_actor_rigid_shape_properties(env, object_handle, shape_props)
 
             # Set object color
             self._gym.set_rigid_body_color(
-                env, object_handle, 0, gymapi.MESH_VISUAL,
-                gymapi.Vec3(0.2, 0.6, 0.2)
+                env, object_handle, 0, gymapi.MESH_VISUAL, gymapi.Vec3(0.2, 0.6, 0.2)
             )
 
         logger.info(f"Created {num_envs} environments")
@@ -390,14 +387,24 @@ class GraspSimulator:
         # Get indices
         self._num_envs = len(self._envs)
         self._robot_indices = torch.tensor(
-            [self._gym.get_actor_index(env, self._robot_handles[i], gymapi.DOMAIN_SIM)
-             for i, env in enumerate(self._envs)],
-            dtype=torch.int32, device=self.device
+            [
+                self._gym.get_actor_index(
+                    env, self._robot_handles[i], gymapi.DOMAIN_SIM
+                )
+                for i, env in enumerate(self._envs)
+            ],
+            dtype=torch.int32,
+            device=self.device,
         )
         self._object_indices = torch.tensor(
-            [self._gym.get_actor_index(env, self._object_handles[i], gymapi.DOMAIN_SIM)
-             for i, env in enumerate(self._envs)],
-            dtype=torch.int32, device=self.device
+            [
+                self._gym.get_actor_index(
+                    env, self._object_handles[i], gymapi.DOMAIN_SIM
+                )
+                for i, env in enumerate(self._envs)
+            ],
+            dtype=torch.int32,
+            device=self.device,
         )
 
         # Total DOFs per robot (virtual 6-DOF + finger DOFs)
@@ -428,6 +435,228 @@ class GraspSimulator:
 
         logger.info(f"Virtual DOF indices: {self._virtual_dof_indices}")
         logger.info(f"Finger DOF indices: {self._finger_dof_indices}")
+
+    def _set_hand_poses_batch(
+        self, translations: np.ndarray, rotations: np.ndarray
+    ) -> None:
+        """
+        Set hand poses for all environments in batch.
+
+        Args:
+            translations: (B, 3) XYZ positions.
+            rotations: (B, 3, 3) rotation matrices.
+        """
+        num_envs = len(self._envs)
+        if len(translations) != num_envs:
+            raise ValueError(f"Expected {num_envs} poses, got {len(translations)}")
+
+        # Calculate stride (DOFs per env)
+        stride = self._dofs_per_robot
+
+        # Vectorized update of DOF targets tensor
+        # We need to map [B, values] to the flat _dof_targets tensor
+
+        # Translations [B, 3] -> DOF targets
+        for i in range(3):
+            if i < len(self._virtual_dof_indices):
+                dof_idx = self._virtual_dof_indices[i]
+                # Indices in global tensor: dof_idx + env_idx * stride
+                indices = torch.arange(num_envs, device=self.device) * stride + dof_idx
+                values = torch.tensor(
+                    translations[:, i], dtype=torch.float, device=self.device
+                )
+                self._dof_targets[indices] = values
+
+        # Rotations -> Euler angles
+        # Note: We need a vectorized rotation_matrix_to_euler_xyz_intrinsic
+        # For now, loop or use pytorch3d if available.
+        # Using loop for simplicity as simple geometric conversions are fast enough compared to sim
+        eulers = []
+        for rot in rotations:
+            eulers.append(rotation_matrix_to_euler_xyz_intrinsic(rot))
+        eulers = np.array(eulers)  # (B, 3)
+
+        for i in range(3):
+            if i + 3 < len(self._virtual_dof_indices):
+                dof_idx = self._virtual_dof_indices[i + 3]
+                indices = torch.arange(num_envs, device=self.device) * stride + dof_idx
+                values = torch.tensor(
+                    eulers[:, i], dtype=torch.float, device=self.device
+                )
+                self._dof_targets[indices] = values
+
+    def _set_finger_joints_batch(self, joint_angles: np.ndarray) -> None:
+        """
+        Set finger joint targets for all environments in batch.
+
+        Args:
+            joint_angles: (B, N_joints) target angles.
+        """
+        num_envs = len(self._envs)
+        if len(joint_angles) != num_envs:
+            raise ValueError(f"Expected {num_envs} joint sets, got {len(joint_angles)}")
+
+        stride = self._dofs_per_robot
+
+        for i, dof_idx in enumerate(self._finger_dof_indices):
+            if i < joint_angles.shape[1]:
+                indices = torch.arange(num_envs, device=self.device) * stride + dof_idx
+                values = torch.tensor(
+                    joint_angles[:, i], dtype=torch.float, device=self.device
+                )
+                self._dof_targets[indices] = values
+
+    def validate_batch(
+        self,
+        translations: np.ndarray,
+        rotations: np.ndarray,
+        joint_angles: np.ndarray,
+        visualize: bool = False,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Validate a batch of grasps in parallel.
+
+        Args:
+            translations: (B, 3) positions.
+            rotations: (B, 3, 3) rotation matrices.
+            joint_angles: (B, N_joints) joint angles.
+            visualize: Whether to render the simulation.
+
+        Returns:
+            Tuple of (is_stable, lift_heights).
+            is_stable: (B,) boolean array.
+            lift_heights: (B,) float array.
+        """
+        if not self._initialized:
+            raise RuntimeError("Simulation not initialized. Call setup() first.")
+
+        batch_size = len(translations)
+        # Ensure we have enough environments
+        if batch_size > len(self._envs):
+            logger.warning(
+                f"Batch size {batch_size} > num_envs {len(self._envs)}. Truncating batch."
+            )
+            batch_size = len(self._envs)
+            translations = translations[:batch_size]
+            rotations = rotations[:batch_size]
+            joint_angles = joint_angles[:batch_size]
+
+        # If batch is smaller than num_envs, we only use the first batch_size envs
+        # (The others will just sit there idle)
+        active_envs = batch_size
+
+        # Record initial object height (assuming 0.05 from setup)
+        initial_object_height = 0.05
+
+        # Compute approach directions
+        # approach_dir = R @ [0, 0, -1]
+        approach_vec = np.array([0, 0, -1])
+        approach_dirs = np.einsum("bij,j->bi", rotations, approach_vec)
+
+        # Pregrasp positions
+        pregrasp_translations = (
+            translations - approach_dirs * self.config.pregrasp_distance
+        )
+
+        # ==========================================
+        # Reset simulation
+        # ==========================================
+        self._gym.refresh_actor_root_state_tensor(self._sim)
+        self._gym.refresh_dof_state_tensor(self._sim)
+
+        # Reset object states (active envs)
+        # Object indices for active envs
+        obj_indices = self._object_indices[:active_envs].long()
+
+        # Reset pos/rot/vel
+        self._root_states[obj_indices, :3] = torch.tensor(
+            [0.0, 0.0, initial_object_height], device=self.device
+        )
+        self._root_states[obj_indices, 3:7] = torch.tensor(
+            [0.0, 0.0, 0.0, 1.0], device=self.device
+        )  # quat
+        self._root_states[obj_indices, 7:] = 0.0  # velocities
+
+        self._gym.set_actor_root_state_tensor_indexed(
+            self._sim,
+            gymtorch.unwrap_tensor(self._root_states),
+            gymtorch.unwrap_tensor(self._object_indices[:active_envs]),
+            active_envs,
+        )
+
+        # Reset DOFs
+        self._dof_targets.zero_()
+
+        # Reset DOF states
+        # Reshape to (num_envs, dofs_per_robot, 2)
+        dof_state_view = self._dof_states.view(len(self._envs), self._dofs_per_robot, 2)
+        dof_state_view[:active_envs, :, :] = 0.0
+
+        self._gym.set_dof_state_tensor(
+            self._sim, gymtorch.unwrap_tensor(self._dof_states)
+        )
+
+        # ==========================================
+        # Waypoint 1: Pregrasp
+        # ==========================================
+        self._set_hand_poses_batch(pregrasp_translations, rotations)
+        self._set_finger_joints_batch(np.zeros_like(joint_angles))  # Open fingers
+
+        for _ in range(self.config.pregrasp_steps):
+            self.step(render=visualize)
+
+        # ==========================================
+        # Waypoint 2: Cover (approach)
+        # ==========================================
+        for i in range(self.config.approach_steps):
+            t = (i + 1) / self.config.approach_steps
+            current_pos = pregrasp_translations + t * (
+                translations - pregrasp_translations
+            )
+            self._set_hand_poses_batch(current_pos, rotations)
+            self.step(render=visualize)
+
+        # ==========================================
+        # Waypoint 3: Grasp (close fingers)
+        # ==========================================
+        for i in range(self.config.grasp_steps):
+            t = (i + 1) / self.config.grasp_steps
+            current_joints = t * joint_angles
+            self._set_finger_joints_batch(current_joints)
+            self.step(render=visualize)
+
+        # ==========================================
+        # Waypoint 4: Squeeze
+        # ==========================================
+        squeeze_joints = joint_angles * 1.1
+        squeeze_joints = np.clip(squeeze_joints, 0, 2.0)
+        self._set_finger_joints_batch(squeeze_joints)
+
+        for _ in range(self.config.squeeze_steps):
+            self.step(render=visualize)
+
+        # ==========================================
+        # Waypoint 5: Lift
+        # ==========================================
+        lift_translations = translations.copy()
+        lift_translations[:, 2] += self.config.lift_height
+
+        for i in range(self.config.lift_steps):
+            t = (i + 1) / self.config.lift_steps
+            current_pos = translations + t * (lift_translations - translations)
+            self._set_hand_poses_batch(current_pos, rotations)
+            self.step(render=visualize)
+
+        # ==========================================
+        # Check result
+        # ==========================================
+        self._gym.refresh_actor_root_state_tensor(self._sim)
+
+        final_heights = self._root_states[obj_indices, 2].cpu().numpy()
+        height_gained = final_heights - initial_object_height
+        is_stable = height_gained > self.config.success_threshold
+
+        return is_stable, final_heights
 
     def _set_hand_pose(self, translation: np.ndarray, rotation: np.ndarray) -> None:
         """
@@ -515,7 +744,9 @@ class GraspSimulator:
         approach_dir = rotation @ np.array([0, 0, -1])
 
         # Pregrasp position: 10cm back along approach direction
-        pregrasp_translation = translation - approach_dir * self.config.pregrasp_distance
+        pregrasp_translation = (
+            translation - approach_dir * self.config.pregrasp_distance
+        )
 
         # ==========================================
         # Reset simulation
@@ -536,7 +767,7 @@ class GraspSimulator:
             self._sim,
             gymtorch.unwrap_tensor(self._root_states),
             gymtorch.unwrap_tensor(self._object_indices[:1]),
-            1
+            1,
         )
 
         # Reset all DOFs to zero
@@ -565,7 +796,9 @@ class GraspSimulator:
         for i in range(self.config.approach_steps):
             t = (i + 1) / self.config.approach_steps
             # Interpolate position
-            current_pos = pregrasp_translation + t * (translation - pregrasp_translation)
+            current_pos = pregrasp_translation + t * (
+                translation - pregrasp_translation
+            )
             self._set_hand_pose(current_pos, rotation)
             self.step(render=visualize)
 

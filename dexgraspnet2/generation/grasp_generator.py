@@ -13,6 +13,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 
 from dexgraspnet2.configs.hand_config import HandConfig
+from dexgraspnet2.generation.grasp_simulator import GraspSimulator, SimulationConfig
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +112,14 @@ class GraspGenerator:
         self._object_poses: List[np.ndarray] = []
         self._labels: List[GraspLabel] = []
 
+        self.simulator = GraspSimulator(
+            hand_config=hand_config,
+            device=device,
+            headless=headless,
+            config=SimulationConfig(friction=friction),
+        )
+        self._batch_size = 64  # Default batch size for simulation
+
         logger.info(
             f"GraspGenerator initialized for {hand_config.name} "
             f"({hand_config.num_dofs} DoF)"
@@ -145,9 +154,7 @@ class GraspGenerator:
 
         if object_poses is None:
             # Place objects on table with default spacing
-            self._object_poses = [
-                np.eye(4) for _ in object_meshes
-            ]
+            self._object_poses = [np.eye(4) for _ in object_meshes]
             for i, pose in enumerate(self._object_poses):
                 pose[2, 3] = table_height + 0.05  # 5cm above table
         else:
@@ -155,6 +162,13 @@ class GraspGenerator:
 
         self._table_height = table_height
         self._scene_initialized = True
+
+        # Initialize simulator with first object mesh
+        # TODO: Support multiple objects in GraspSimulator if needed for clutter generation
+        if self._object_meshes:
+            self.simulator.setup(
+                object_mesh_path=self._object_meshes[0], num_envs=self._batch_size
+            )
 
         logger.info(f"Scene set up with {len(object_meshes)} object(s)")
 
@@ -208,12 +222,14 @@ class GraspGenerator:
         """Sample a random rotation matrix."""
         # Use quaternion uniform sampling
         u = np.random.uniform(size=3)
-        q = np.array([
-            np.sqrt(1 - u[0]) * np.sin(2 * np.pi * u[1]),
-            np.sqrt(1 - u[0]) * np.cos(2 * np.pi * u[1]),
-            np.sqrt(u[0]) * np.sin(2 * np.pi * u[2]),
-            np.sqrt(u[0]) * np.cos(2 * np.pi * u[2]),
-        ])
+        q = np.array(
+            [
+                np.sqrt(1 - u[0]) * np.sin(2 * np.pi * u[1]),
+                np.sqrt(1 - u[0]) * np.cos(2 * np.pi * u[1]),
+                np.sqrt(u[0]) * np.sin(2 * np.pi * u[2]),
+                np.sqrt(u[0]) * np.cos(2 * np.pi * u[2]),
+            ]
+        )
         # Convert to rotation matrix
         return self._quaternion_to_matrix(q)
 
@@ -221,11 +237,13 @@ class GraspGenerator:
     def _quaternion_to_matrix(q: np.ndarray) -> np.ndarray:
         """Convert quaternion (x,y,z,w) to rotation matrix."""
         x, y, z, w = q
-        return np.array([
-            [1 - 2*(y*y + z*z), 2*(x*y - w*z), 2*(x*z + w*y)],
-            [2*(x*y + w*z), 1 - 2*(x*x + z*z), 2*(y*z - w*x)],
-            [2*(x*z - w*y), 2*(y*z + w*x), 1 - 2*(x*x + y*y)],
-        ])
+        return np.array(
+            [
+                [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
+                [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
+                [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)],
+            ]
+        )
 
     def optimize_grasps(
         self,
@@ -270,19 +288,54 @@ class GraspGenerator:
         if not self._scene_initialized:
             raise RuntimeError("Scene not initialized. Call setup_scene() first.")
 
-        # TODO: Implement Isaac Lab simulation
-        # For now, return placeholder labels
-        logger.warning("Simulation validation not yet implemented")
+        if not candidates:
+            return []
+
+        logger.info(f"Validating {len(candidates)} candidates via simulation...")
+
+        # Convert candidates to arrays for batch processing
+        translations = np.stack([c.translation for c in candidates])
+        rotations = np.stack([c.rotation for c in candidates])
+        joint_angles = np.stack([c.joint_angles for c in candidates])
+
+        num_candidates = len(candidates)
+        all_is_stable = []
+        all_lift_heights = []
+
+        # Process in batches
+        # Ensure we use the configured batch size
+        sim_batch_size = min(batch_size, self._batch_size)
+
+        for i in range(0, num_candidates, sim_batch_size):
+            batch_trans = translations[i : i + sim_batch_size]
+            batch_rots = rotations[i : i + sim_batch_size]
+            batch_joints = joint_angles[i : i + sim_batch_size]
+
+            is_stable, lift_heights = self.simulator.validate_batch(
+                batch_trans, batch_rots, batch_joints
+            )
+
+            all_is_stable.append(is_stable)
+            all_lift_heights.append(lift_heights)
+
+            logger.info(
+                f"Validated batch {i // sim_batch_size + 1}: "
+                f"{np.sum(is_stable)}/{len(is_stable)} stable"
+            )
+
+        # Concatenate results
+        is_stable = np.concatenate(all_is_stable)
+        lift_heights = np.concatenate(all_lift_heights)
 
         labels = []
-        for candidate in candidates:
+        for i, candidate in enumerate(candidates):
             labels.append(
                 GraspLabel(
                     translation=candidate.translation,
                     rotation=candidate.rotation,
                     joint_angles=candidate.joint_angles,
-                    is_stable=False,
-                    lift_height=0.0,
+                    is_stable=bool(is_stable[i]),
+                    lift_height=float(lift_heights[i]),
                 )
             )
 
