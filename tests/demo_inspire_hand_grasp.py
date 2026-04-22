@@ -107,7 +107,7 @@ def main():
     print("  4. Squeeze (additional grip)", flush=True)
     print("  5. Lift (move up, check if object follows)", flush=True)
 
-    is_stable, final_height = simulator.validate_single_grasp(
+    is_stable, final_height, _trajectory = simulator.validate_single_grasp(
         translation=translation,
         rotation=rotation,
         joint_angles=joint_angles,

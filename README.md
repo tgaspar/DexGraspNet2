@@ -167,6 +167,32 @@ This script:
 3. Runs the grasp generation model.
 4. Outputs an HTML visualization of the scene and predicted grasps in the camera frame.
 
+### Generate Dataset for New Hand
+
+To generate a training dataset (grasps) for a new hand (e.g., Inspire Hand) by simulation:
+
+```bash
+docker run --rm --gpus all \
+  -v $(pwd):/root/DexGraspNet2 \
+  -v /path/to/data:/root/DexGraspNet2/data \
+  -w /root/DexGraspNet2 \
+  -e PYTHONPATH=/root/DexGraspNet2 \
+  -e NVIDIA_DRIVER_CAPABILITIES=all \
+  -e VK_ICD_FILENAMES=/etc/vulkan/icd.d/nvidia_icd.json \
+  -e __GLX_VENDOR_LIBRARY_NAME=nvidia \
+  dexgraspnet2:latest \
+  bash -c "source /opt/miniconda3/etc/profile.d/conda.sh && conda activate py38 && \
+    python scripts/generate_inspire_dataset.py \
+      --scene_ids scene_0000 \
+      --num_grasps 100"
+```
+
+This script:
+1. Loads objects from the specified scenes.
+2. Samples grasp candidates using surface normal alignment.
+3. Validates grasps using Isaac Gym physics simulation (lift test).
+4. Saves stable grasps to `data/dex_grasps_new/scene_XXXX/inspire_hand/`.
+
 ### Train Model
 
 Train the diffusion-based grasp prediction model:

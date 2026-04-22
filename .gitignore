@@ -47,3 +47,10 @@ tests/test_import_order.py
 
 # Log files
 *.log
+
+# Per-run trace output (from scripts/generate_inspire_dataset.py and friends)
+.logs/
+
+# Isaac Gym writes USD cache directories next to loaded URDFs
+robot_models/urdf/**/*.usd
+robot_models/urdf/*/configuration

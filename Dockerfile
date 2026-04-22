@@ -94,6 +94,14 @@ RUN /opt/miniconda3/bin/conda run -n py38 pip install \
     wandb \
     trimesh
 
+# Visualization deps (USD + URDF FK). Kept in a separate RUN because adding
+# these to the big pip block above inflates pip's resolver working set enough
+# to get OOM-killed during Docker build (manifests as conda exit 127 with
+# downloads truncated mid-file).
+RUN /opt/miniconda3/bin/conda run -n py38 pip install \
+    usd-core \
+    yourdfpy
+
 # Install diffusers with pinned version (fixes torch.xpu compatibility issue)
 RUN /opt/miniconda3/bin/conda run -n py38 pip install \
     'diffusers[torch]==0.21.0' \

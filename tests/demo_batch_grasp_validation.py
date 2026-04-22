@@ -767,13 +767,14 @@ def main():
     parser.add_argument("--timeout", type=float, default=None)
     parser.add_argument("--num-envs", type=int, default=1)
     parser.add_argument("--grasp-idx", type=int, default=None)
+    parser.add_argument("--obj-id", type=int, default=0, help="Object ID to test")
+    parser.add_argument("--scene-id", type=int, default=1, help="Scene ID to test")
     args = parser.parse_args()
 
     # Object ID to test
-    obj_id = 0  # Object ID from the grasp path (000.npz -> object 0)
-
+    obj_id = args.obj_id  # Object ID from the grasp path (000.npz -> object 0)
     # Scene ID
-    scene_id = 1  # scene_0001
+    scene_id = args.scene_id  # scene_0001
 
     # Paths
     robot_urdf = Path("robot_models/urdf/leap_hand_simplified_free.urdf")
@@ -782,9 +783,17 @@ def main():
     object_urdf = Path(f"data/meshdata/{obj_id:03d}/nontextured_simplified.urdf")
     object_mesh = Path(f"data/meshdata/{obj_id:03d}/simplified.obj")
 
-    for p in [robot_urdf, object_urdf, grasp_path, object_mesh]:
+    for p in [robot_urdf, grasp_path, object_mesh, object_urdf]:
         if not p.exists():
             print(f"Missing: {p}")
+            # Print current directory for debugging
+            print(f"Current directory: {Path.cwd()}")
+            # Print the child directories of the current directory
+            print(f"Child directories: {[d.name for d in Path.cwd().iterdir() if d.is_dir()]}")
+            # Print the child directories of data/
+            data_dir = Path("data")
+            if data_dir.exists():
+                print(f"data/ child directories: {[d.name for d in data_dir.iterdir() if d.is_dir()]}")
             return
     print(f"Using grasps from: {grasp_path}")
     

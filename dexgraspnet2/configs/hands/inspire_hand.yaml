@@ -82,3 +82,79 @@ mimic_joints:
     parent: pinky_proximal_joint
     multiplier: 1.06399
     offset: -0.04545
+
+# Simulation parameters (tuned for compliance)
+joint_stiffness:
+  - 300.0
+  - 300.0
+  - 300.0
+  - 300.0
+  - 300.0
+  - 300.0
+
+joint_damping:
+  - 10.0
+  - 10.0
+  - 10.0
+  - 10.0
+  - 10.0
+  - 10.0
+
+# Standard poses
+default_open_pose: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+default_closed_pose: [1.3, 0.6, 1.47, 1.47, 1.47, 1.47]
+
+# Grasp preshapes
+# Each preshape defines two joint configurations:
+#   - pregrasp: hand held open / pre-opposed before the approach motion
+#   - target:   hand closed into the grasp
+preshapes:
+  power:
+    target:   [1.3, 0.6, 1.47, 1.47, 1.47, 1.47]
+    pregrasp: [0.4, 0.0, 0.0, 0.0, 0.0, 0.0]
+  tripod:
+    target:   [1.3, 0.6, 1.47, 1.47, 0.0, 0.0]
+    pregrasp: [1.3, 0.0, 0.0, 0.0, 0.0, 0.0]
+  pinch_index:
+    target:   [1.3, 0.6, 1.47, 0.0, 0.0, 0.0]
+    pregrasp: [1.3, 0.0, 0.0, 0.0, 0.0, 0.0]
+  pinch_middle:
+    target:   [1.3, 0.6, 0.0, 1.47, 0.0, 0.0]
+    pregrasp: [1.3, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+# TCP Definition (relative to the wrist_link / hand_base_link)
+# Calibrated visually via scripts/visualize_grasp_candidate.py — the TCP
+# gizmo should sit on the normal cylinder when jitter is zero and its +Z
+# axis should point into the object.
+tcp_position: [-0.02, -0.09, 0.0]
+tcp_rotation_rpy: [0.0, -90.0, 0.0]
+
+# Sampling parameters
+sampling_strategy: "surface_normal"
+sampling_params:
+  # Surface Normal params.
+  # standoff is the distance (meters) from the sampled surface point to the
+  # TCP origin along the outward normal at the *grasp* waypoint. With
+  # Inspire's ~5-8 cm finger reach, standoff must be close to zero (or
+  # slightly negative = palm pressed into surface) so fingers can wrap.
+  # The 10 cm pregrasp backoff is added on top during validation, giving a
+  # linear approach trajectory into the contact pose.
+  standoff_min: -0.01
+  standoff_max: 0.02
+  # Tangential offset in the plane perpendicular to the approach axis (meters).
+  jitter_xy: 0.02
+  # Rotational jitter around each TCP-frame axis, radians (full range ±value).
+  # _x and _y tilt the approach axis itself (hand approaches off-normal);
+  # _z is pure yaw around the approach axis (which finger points where).
+  # Keep x/y small or the hand approaches at an angle that misses the object.
+  jitter_rot_x: 0.7
+  jitter_rot_y: 0.7
+  jitter_rot_z: 0.0
+  # Surface-normal filter (SurfaceNormalStrategy only). Drop candidates whose
+  # outward surface normal is within this angle of horizontal — rejects both
+  # ground-facing normals and near-vertical walls of the object. Set to 0 to
+  # disable filtering.
+  min_normal_angle_deg: 10.0
+  # Dome params
+  dome_radius_min: 0.15
+  dome_radius_max: 0.25

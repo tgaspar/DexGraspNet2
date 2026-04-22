@@ -20,9 +20,9 @@ if __name__ == '__main__':
     # load scene annotation
     scene_path = os.path.join(
         'data/scenes', f'scene_{args.scene_id}')
-    extrinsics_path = os.path.join(scene_path, 'kinect/cam0_wrt_table.npy')
+    extrinsics_path = os.path.join(scene_path, 'realsense/cam0_wrt_table.npy')
     extrinsics = np.load(extrinsics_path)
-    annotation_path = os.path.join(scene_path, 'kinect/annotations/0000.xml')
+    annotation_path = os.path.join(scene_path, 'realsense/annotations/0000.xml')
     annotation = ET.parse(annotation_path)
     
     # parse annotation

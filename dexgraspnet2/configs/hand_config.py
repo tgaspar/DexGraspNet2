@@ -46,6 +46,27 @@ class HandConfig:
     fingertip_links: List[str] = field(default_factory=list)
     wrist_link: str = "hand_base_link"
 
+    # Simulation parameters (per joint)
+    joint_stiffness: Optional[List[float]] = None
+    joint_damping: Optional[List[float]] = None
+
+    # TCP definition relative to wrist_link (root)
+    # Z-axis of TCP points towards the object
+    tcp_position: Optional[List[float]] = None  # [x, y, z]
+    tcp_rotation_rpy: Optional[List[float]] = None  # [roll, pitch, yaw] in degrees
+
+    # Sampling parameters
+    sampling_strategy: str = "surface_normal"  # 'surface_normal' or 'dome'
+    sampling_params: Optional[Dict[str, float]] = field(default_factory=dict)
+
+    # Pre-defined poses for grasping logic
+    # If not provided, defaults to lower limits (open) and upper limits (closed)
+    default_open_pose: Optional[List[float]] = None
+    default_closed_pose: Optional[List[float]] = None
+
+    # Dictionary of preshapes (name -> {target: [...], pregrasp: [...]})
+    preshapes: Dict[str, Dict[str, List[float]]] = field(default_factory=dict)
+
     def __post_init__(self):
         """Validate configuration after initialization."""
         if len(self.joint_names) != self.num_dofs:
@@ -95,8 +116,13 @@ class HandConfig:
             config_dict = yaml.safe_load(f)
 
         required_fields = [
-            "name", "urdf_path", "meta_path", "num_dofs",
-            "joint_names", "joint_lower_limits", "joint_upper_limits"
+            "name",
+            "urdf_path",
+            "meta_path",
+            "num_dofs",
+            "joint_names",
+            "joint_lower_limits",
+            "joint_upper_limits",
         ]
 
         for field_name in required_fields:
@@ -109,6 +135,17 @@ class HandConfig:
             config_dict["urdf_path"] = base_dir / config_dict["urdf_path"]
         if not Path(config_dict["meta_path"]).is_absolute():
             config_dict["meta_path"] = base_dir / config_dict["meta_path"]
+
+        # Drop YAML-only keys (e.g. mimic_joints) that aren't dataclass fields.
+        # Forward-compat: unknown keys are logged and ignored rather than raising.
+        from dataclasses import fields as _dc_fields
+        known = {f.name for f in _dc_fields(cls)}
+        unknown = set(config_dict) - known
+        if unknown:
+            logger.debug(
+                f"Ignoring YAML keys not in HandConfig schema: {sorted(unknown)}"
+            )
+            config_dict = {k: v for k, v in config_dict.items() if k in known}
 
         return cls(**config_dict)
 
@@ -131,11 +168,46 @@ class HandConfig:
             "wrist_link": self.wrist_link,
         }
 
+        if self.joint_stiffness is not None:
+            config_dict["joint_stiffness"] = self.joint_stiffness
+        if self.joint_damping is not None:
+            config_dict["joint_damping"] = self.joint_damping
+
+        if self.tcp_position is not None:
+            config_dict["tcp_position"] = self.tcp_position
+        if self.tcp_rotation_rpy is not None:
+            config_dict["tcp_rotation_rpy"] = self.tcp_rotation_rpy
+
+        config_dict["sampling_strategy"] = self.sampling_strategy
+
+        if self.sampling_params:
+            config_dict["sampling_params"] = self.sampling_params
+
+        if self.default_open_pose is not None:
+            config_dict["default_open_pose"] = self.default_open_pose
+        if self.default_closed_pose is not None:
+            config_dict["default_closed_pose"] = self.default_closed_pose
+
+        if self.preshapes:
+            config_dict["preshapes"] = self.preshapes
+
         config_path = Path(config_path)
         config_path.parent.mkdir(parents=True, exist_ok=True)
 
         with open(config_path, "w") as f:
             yaml.safe_dump(config_dict, f, default_flow_style=False)
+
+    def get_open_pose(self) -> List[float]:
+        """Get the open hand pose (defaults to lower limits)."""
+        if self.default_open_pose is not None:
+            return self.default_open_pose
+        return self.joint_lower_limits.copy()
+
+    def get_closed_pose(self) -> List[float]:
+        """Get the fully closed hand pose (defaults to upper limits)."""
+        if self.default_closed_pose is not None:
+            return self.default_closed_pose
+        return self.joint_upper_limits.copy()
 
     @classmethod
     def leap_hand(cls, base_path: Optional[Path] = None) -> "HandConfig":
@@ -162,29 +234,65 @@ class HandConfig:
 
         # Joint names in the order expected by the neural network
         joint_names = [
-            "j0", "j1", "j2", "j3",     # Index finger
-            "j4", "j5", "j6", "j7",     # Middle finger
-            "j8", "j9", "j10", "j11",   # Ring finger
-            "j12", "j13", "j14", "j15", # Thumb
+            "j0",
+            "j1",
+            "j2",
+            "j3",  # Index finger
+            "j4",
+            "j5",
+            "j6",
+            "j7",  # Middle finger
+            "j8",
+            "j9",
+            "j10",
+            "j11",  # Ring finger
+            "j12",
+            "j13",
+            "j14",
+            "j15",  # Thumb
         ]
 
         # Joint limits from URDF (in radians)
         joint_lower_limits = [
-            -1.047, -0.314, -0.506, -0.366,  # Index
-            -1.047, -0.314, -0.506, -0.366,  # Middle
-            -1.047, -0.314, -0.506, -0.366,  # Ring
-            -0.349, -0.47, -1.20, -1.34,     # Thumb
+            -1.047,
+            -0.314,
+            -0.506,
+            -0.366,  # Index
+            -1.047,
+            -0.314,
+            -0.506,
+            -0.366,  # Middle
+            -1.047,
+            -0.314,
+            -0.506,
+            -0.366,  # Ring
+            -0.349,
+            -0.47,
+            -1.20,
+            -1.34,  # Thumb
         ]
 
         joint_upper_limits = [
-            1.047, 2.23, 1.885, 2.042,  # Index
-            1.047, 2.23, 1.885, 2.042,  # Middle
-            1.047, 2.23, 1.885, 2.042,  # Ring
-            2.094, 2.443, 1.90, 1.88,   # Thumb
+            1.047,
+            2.23,
+            1.885,
+            2.042,  # Index
+            1.047,
+            2.23,
+            1.885,
+            2.042,  # Middle
+            1.047,
+            2.23,
+            1.885,
+            2.042,  # Ring
+            2.094,
+            2.443,
+            1.90,
+            1.88,  # Thumb
         ]
 
         fingertip_links = [
-            "fingertip",    # Index
+            "fingertip",  # Index
             "fingertip_2",  # Middle
             "fingertip_3",  # Ring
             "thumb_fingertip",  # Thumb
