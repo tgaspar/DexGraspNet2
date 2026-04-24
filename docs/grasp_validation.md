@@ -198,13 +198,14 @@ pregrasp_pos = grasp_translation - approach_dir * pregrasp_distance
 
 ```bash
 docker run --rm --gpus all \
+  --user $(id -u):$(id -g) -e HOME=/tmp \
   -e DISPLAY=:1 \
   -e NVIDIA_DRIVER_CAPABILITIES=all \
   -v /tmp/.X11-unix:/tmp/.X11-unix \
   -v /dev/dri:/dev/dri \
-  -v $(pwd):/root/DexGraspNet2 \
-  -v /mnt/datasets/DexGraspNet2.0-data:/root/DexGraspNet2/data \
-  -w /root/DexGraspNet2 dexgraspnet2 \
+  -v $(pwd):/workspace \
+  -v /mnt/datasets/DexGraspNet2.0-data:/workspace/data \
+  -w /workspace dexgraspnet2 \
   bash -c "source /opt/miniconda3/etc/profile.d/conda.sh && conda activate py38 && \
     python -u tests/demo_batch_grasp_validation.py --num-envs 16 --timeout 10"
 ```

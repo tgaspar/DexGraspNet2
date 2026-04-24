@@ -8,28 +8,36 @@ A Docker-based fork of **DexGraspNet 2.0: Learning Generative Dexterous Grasping
 
 ## Why This Fork?
 
-The original DexGraspNet2.0 requires a complex environment setup with specific versions of CUDA, PyTorch, MinkowskiEngine, Isaac Gym, and numerous other dependencies. This fork provides:
+The original DexGraspNet 2.0 requires a complex environment setup with specific versions of CUDA, PyTorch, MinkowskiEngine, Isaac Gym, and numerous other dependencies. This fork provides:
 
-- **Docker-first approach**: Single container with all dependencies pre-configured
-- **Refactored training pipeline**: Modular, configurable training with W&B integration
-- **Simplified entry points**: Clear examples for visualization, validation, and training
+- **Docker-first approach** — single container with all dependencies pre-configured.
+- **Refactored training pipeline** — modular, configurable, with W&B integration.
+- **FastAPI inference server** — run the pretrained model behind HTTP, with optional per-request HTML / USD / NPZ debug dumps.
+- **Label-generation pipeline for new hands** *(work in progress)* — Isaac Gym-based, currently wired for the Inspire hand. Yield is ~3% on easy shapes, 0% on harder ones; the paper's force-closure optimisation step hasn't been re-implemented yet. Don't rely on it for production labels — see caveat in [`docs/data_generation.md`](docs/data_generation.md).
+- **Simplified entry points** — clear examples for visualization, validation, training, and inference.
+
+> ⚠️ **This repository ships no model weights and no datasets.**
+> The repo contains *code* only. Pretrained checkpoints, scenes, meshes, and labels must be downloaded separately from the paper authors' HuggingFace release — see [Full Data Setup](#full-data-setup) below. The quick test only needs the LEAP checkpoint; everything else beyond that requires the full data download.
 
 ## Repository Structure
 
 ```
 DexGraspNet2/
 ├── dexgraspnet2/           # Refactored Python package
-│   ├── configs/            # Dataclass-based configuration
+│   ├── configs/            # Dataclass + YAML configuration
 │   ├── models/             # Model architectures (backbones, diffusion)
+│   ├── generation/         # Candidate sampling + Isaac Gym validation
+│   ├── inference/          # GraspPredictor (loads checkpoint, runs inference)
 │   ├── training/           # Training loop, callbacks, metrics
-│   ├── simulation/         # Isaac Gym grasp validation
 │   └── train.py            # Training entry point
-├── src/                    # Original codebase (preprocessing, eval)
+├── src/                    # Original paper codebase (preprocessing, eval, vis)
+├── scripts/                # Entry-point CLIs (serve / generate / visualize)
 ├── tests/                  # Visualization and validation demos
 ├── configs/                # YAML configuration files
-├── robot_models/           # URDF files for hands (LEAP, Inspire, etc.)
+├── robot_models/           # URDF files for hands (LEAP, Inspire)
+├── docs/                   # Topic-specific documentation (see below)
 ├── Dockerfile              # Docker image definition
-└── data/                   # Symlinks to dataset (see Data Setup)
+└── data/                   # Symlinks to dataset (see Full Data Setup)
 ```
 
 ## Quick Start
@@ -40,20 +48,70 @@ DexGraspNet2/
 docker build -t dexgraspnet2:latest .
 ```
 
-### 2. Data Setup
+### 2. Quick test that everything works
 
-Download data from [HuggingFace](https://huggingface.co/datasets/lhrlhr/DexGraspNet2.0):
+Before downloading multi-GB datasets, smoke-test the whole pipeline first. A bundled scene (~1.4 MB, `examples/quick_test_data/`) ships with the repo, so the only thing you need to grab is the LEAP checkpoint.
+
+```bash
+# Fetch the checkpoints tarball, extract only the LEAP files we need
+mkdir -p data/DexGraspNet2.0-ckpts
+cd data/DexGraspNet2.0-ckpts
+wget https://huggingface.co/datasets/lhrlhr/DexGraspNet2.0/resolve/main/DexGraspNet2.0-ckpts.tar
+tar -xf DexGraspNet2.0-ckpts.tar OURS/config.yaml OURS/ckpt/ckpt_50000.pth
+cd -
+
+mkdir -p outputs
+docker run --rm --gpus all \
+  --user $(id -u):$(id -g) -e HOME=/tmp \
+  -v $(pwd):/workspace \
+  -w /workspace -e PYTHONPATH=/workspace \
+  dexgraspnet2:latest \
+  bash -c "source /opt/miniconda3/etc/profile.d/conda.sh && conda activate py38 && \
+    python scripts/quick_test.py \
+      --ckpt_path data/DexGraspNet2.0-ckpts/OURS/ckpt/ckpt_50000.pth \
+      --data_root examples/quick_test_data \
+      --output_path outputs/quicktest_vis.html"
+```
+
+The script prints a `QUICK TEST PASSED` banner when done and writes `outputs/quicktest_vis.html`. Open it in any browser — you should see the scene's point cloud (blue) with the LEAP hand rendered at the top-scoring predicted grasp. First run takes a minute or two (CUDA kernels compile, checkpoint loads); subsequent runs are fast.
+
+`--user $(id -u):$(id -g)` + `HOME=/tmp` runs the container as your host user so the output HTML lands owned by you — openable in Firefox without a trip through `sudo chown`.
+
+What this exercises: Docker image + CUDA, MinkowskiEngine, `dexgraspnet2.inference.GraspPredictor`, checkpoint loading, diffusion sampling, Plotly HTML output. If the quick test passes, the refactored inference code path (the same one behind the FastAPI server) is live.
+
+Common failures:
+- **Checkpoint not found** → `tar -xf` didn't run or extracted elsewhere. Re-check `data/DexGraspNet2.0-ckpts/OURS/ckpt/ckpt_50000.pth` exists.
+- **GPU out of memory** → the LEAP model loads around 2 GB; close other GPU apps or pick a smaller GPU with `--gpus device=<N>`.
+
+## Usage
+
+Detailed, topic-specific docs live under `docs/`:
+
+| Doc | What's inside |
+|---|---|
+| [`docs/inference.md`](docs/inference.md) | **Running the pretrained model.** FastAPI server, debug dumps, one-shot prediction + visualization scripts, grasp-frame axis convention, ROS 2 integration notes. |
+| [`docs/api/predict.md`](docs/api/predict.md) | **Full API schema** for `POST /predict` — request / response fields, error codes, `scene_points` + `category_sampling` + `object_id` semantics. |
+| [`docs/training.md`](docs/training.md) | **Training a new model.** Command, YAML configs, pre-trained checkpoint catalog, checkpoint layout, W&B setup. |
+| [`docs/data_generation.md`](docs/data_generation.md) | **Generating grasp labels for new hands.** Pipeline stages (settle → sample → validate), candidate visualizer, Isaac Gym validation, dataset inspection. Note: Inspire-hand pipeline is under active development (~3% yield — see caveat inside). |
+| [`docs/grasp_validation.md`](docs/grasp_validation.md) | **Deep dive into 5-waypoint validation.** Coordinate frames, success criteria, label transform math. Reference for the label-generation and validation flows. |
+
+## Full Data Setup
+
+Only needed for training, label generation, or running inference against arbitrary scenes from the dataset — the quick test above doesn't need any of this.
+
+Download the remaining assets from [HuggingFace](https://huggingface.co/datasets/lhrlhr/DexGraspNet2.0):
 
 ```bash
 # Create data directory
 mkdir -p /path/to/dexgraspnet2-data
+cd /path/to/dexgraspnet2-data
 
 # Download required files
 wget https://huggingface.co/datasets/lhrlhr/DexGraspNet2.0/resolve/main/scenes.tar.gz
 wget https://huggingface.co/datasets/lhrlhr/DexGraspNet2.0/resolve/main/meshdata.tar.gz
 wget https://huggingface.co/datasets/lhrlhr/DexGraspNet2.0/resolve/main/dex_grasps_new.tar.gz
 wget https://huggingface.co/datasets/lhrlhr/DexGraspNet2.0/resolve/main/dex_graspness_new.tar.gz
-wget https://huggingface.co/datasets/lhrlhr/DexGraspNet2.0/resolve/main/DexGraspNet2.0-ckpts.tar
+wget https://huggingface.co/datasets/lhrlhr/DexGraspNet2.0/resolve/main/DexGraspNet2.0-ckpts.tar  # skip if you already have it from the quick test
 
 # Extract
 tar -xzf scenes.tar.gz
@@ -62,231 +120,23 @@ tar -xzf dex_grasps_new.tar.gz
 tar -xzf dex_graspness_new.tar.gz
 tar -xf DexGraspNet2.0-ckpts.tar
 
-# Create symlinks in project
+# Create symlinks in project (skip the DexGraspNet2.0-ckpts link if you already populated that directory)
+cd /path/to/DexGraspNet2
 ln -s /path/to/dexgraspnet2-data/scenes data/scenes
 ln -s /path/to/dexgraspnet2-data/meshdata data/meshdata
 ln -s /path/to/dexgraspnet2-data/dex_grasps_new data/dex_grasps_new
 ln -s /path/to/dexgraspnet2-data/dex_graspness_new data/dex_graspness_new
-```
-
-## Usage
-
-All commands run inside Docker. The general pattern:
-
-```bash
-docker run --rm --gpus all \
-  -v $(pwd):/root/DexGraspNet2 \
-  -v /path/to/data:/root/DexGraspNet2/data \
-  -w /root/DexGraspNet2 \
-  dexgraspnet2:latest \
-  conda run -n py38 <command>
-```
-
-### Visualize Grasps from Dataset
-
-Visualize dexterous hand grasps with graspness heatmap overlay:
-
-```bash
-docker run --rm --gpus all \
-  -v $(pwd):/root/DexGraspNet2 \
-  -v /path/to/data:/root/DexGraspNet2/data \
-  -w /root/DexGraspNet2 \
-  -e DISPLAY=$DISPLAY \
-  -v /tmp/.X11-unix:/tmp/.X11-unix \
-  dexgraspnet2:latest \
-  conda run -n py38 python tests/visualize_dex_grasp.py \
-    --scene scene_0001 \
-    --view 0000 \
-    --grasp_num 5 \
-    --with_graspness True
-```
-
-Visualize scene point cloud:
-
-```bash
-docker run --rm --gpus all \
-  -v $(pwd):/root/DexGraspNet2 \
-  -v /path/to/data:/root/DexGraspNet2/data \
-  -w /root/DexGraspNet2 \
-  dexgraspnet2:latest \
-  conda run -n py38 python tests/visualize_scene.py
-```
-
-### Validate Grasps in Isaac Gym Simulation
-
-Run batch grasp validation with physics simulation:
-
-```bash
-docker run --rm --gpus all \
-  --shm-size=8g \
-  -v $(pwd):/root/DexGraspNet2 \
-  -v /path/to/data:/root/DexGraspNet2/data \
-  -w /root/DexGraspNet2 \
-  -e PYTHONPATH=/root/DexGraspNet2 \
-  dexgraspnet2:latest \
-  conda run -n py38 python tests/demo_batch_grasp_validation.py \
-    --num_envs 32 \
-    --scene scene_0001 \
-    --robot leap_hand
-```
-
-The validation runs a 5-stage grasp trajectory:
-1. **Pregrasp**: Position hand at approach pose
-2. **Approach**: Move toward object
-3. **Grasp**: Close fingers
-4. **Squeeze**: Apply additional force
-5. **Lift**: Lift object and check success (object rises ≥3cm)
-
-### Evaluate Predicted Grasps (Perception & Inference)
-
-To verify the full perception and inference pipeline (spawning objects from scene data, capturing point clouds, running the model, and generating grasps):
-
-```bash
-docker run --rm --gpus all \
-  -e DISPLAY=$DISPLAY \
-  -v /tmp/.X11-unix:/tmp/.X11-unix \
-  -v $(pwd):/root/DexGraspNet2 \
-  -v /mnt/datasets/dexgraspnet2/data:/root/DexGraspNet2/data \
-  -w /root/DexGraspNet2 \
-  -e PYTHONPATH=/root/DexGraspNet2 \
-  -e NVIDIA_DRIVER_CAPABILITIES=all \
-  -e VK_ICD_FILENAMES=/etc/vulkan/icd.d/nvidia_icd.json \
-  -e __GLX_VENDOR_LIBRARY_NAME=nvidia \
-  dexgraspnet2:latest \
-  bash -c "source /opt/miniconda3/etc/profile.d/conda.sh && conda activate py38 && \
-    python tests/evaluate_predicted_grasps.py \
-      --ckpt_path data/DexGraspNet2.0-ckpts/OURS/ckpt/ckpt_50000.pth \
-      --scene_id scene_0220 \
-      --num_grasps 10 \
-      --output_vis tests/output/eval_vis.html"
-```
-
-This script:
-1. Loads the specified scene geometry.
-2. Captures a depth image and converts it to a point cloud (using reference camera pose).
-3. Runs the grasp generation model.
-4. Outputs an HTML visualization of the scene and predicted grasps in the camera frame.
-
-### Generate Dataset for New Hand
-
-To generate a training dataset (grasps) for a new hand (e.g., Inspire Hand) by simulation:
-
-```bash
-docker run --rm --gpus all \
-  -v $(pwd):/root/DexGraspNet2 \
-  -v /path/to/data:/root/DexGraspNet2/data \
-  -w /root/DexGraspNet2 \
-  -e PYTHONPATH=/root/DexGraspNet2 \
-  -e NVIDIA_DRIVER_CAPABILITIES=all \
-  -e VK_ICD_FILENAMES=/etc/vulkan/icd.d/nvidia_icd.json \
-  -e __GLX_VENDOR_LIBRARY_NAME=nvidia \
-  dexgraspnet2:latest \
-  bash -c "source /opt/miniconda3/etc/profile.d/conda.sh && conda activate py38 && \
-    python scripts/generate_inspire_dataset.py \
-      --scene_ids scene_0000 \
-      --num_grasps 100"
-```
-
-This script:
-1. Loads objects from the specified scenes.
-2. Samples grasp candidates using surface normal alignment.
-3. Validates grasps using Isaac Gym physics simulation (lift test).
-4. Saves stable grasps to `data/dex_grasps_new/scene_XXXX/inspire_hand/`.
-
-### Train Model
-
-Train the diffusion-based grasp prediction model:
-
-```bash
-docker run --rm --gpus all \
-  --shm-size=32g \
-  -v $(pwd):/root/DexGraspNet2 \
-  -v /path/to/data:/root/DexGraspNet2/data \
-  -w /root/DexGraspNet2 \
-  -e PYTHONPATH=/root/DexGraspNet2 \
-  -e WANDB_API_KEY=your_wandb_key \
-  dexgraspnet2:latest \
-  bash -c "source /opt/miniconda3/etc/profile.d/conda.sh && conda activate py38 && \
-    python -u -m dexgraspnet2.train \
-      --config configs/network/train_dex_ours.yaml \
-      --exp_name my_experiment \
-      --batch_size 16 \
-      --max_iter 50000 \
-      --wandb"
-```
-
-Training outputs:
-- Checkpoints: `experiments/<exp_name>/ckpt/ckpt_*.pth`
-- Config backup: `experiments/<exp_name>/training_config.yaml`
-- W&B dashboard: Real-time loss curves and metrics
-
-### Run Inference
-
-Generate grasp predictions on test scenes:
-
-```bash
-docker run --rm --gpus all \
-  -v $(pwd):/root/DexGraspNet2 \
-  -v /path/to/data:/root/DexGraspNet2/data \
-  -w /root/DexGraspNet2 \
-  dexgraspnet2:latest \
-  conda run -n py38 python src/eval/predict_dexterous_all_cates.py \
-    --ckpt experiments/my_experiment/ckpt/ckpt_50000.pth
-```
-
-Visualize predictions:
-
-```bash
-docker run --rm --gpus all \
-  -v $(pwd):/root/DexGraspNet2 \
-  -v /path/to/data:/root/DexGraspNet2/data \
-  -w /root/DexGraspNet2 \
-  dexgraspnet2:latest \
-  conda run -n py38 python tests/visualize_dex_pred.py \
-    --ckpt_path experiments/my_experiment/ckpt/ckpt_50000.pth
-```
-
-## Pre-trained Checkpoints
-
-After extracting `DexGraspNet2.0-ckpts.tar`, available checkpoints include:
-
-| Checkpoint | Description |
-|------------|-------------|
-| `OURS/` | Main model (LEAP hand, 50k iterations) |
-| `OURS_gripper/` | Parallel-jaw gripper variant |
-| `BASELINE_ISAGrasp/` | ISAGrasp baseline |
-| `ABLATION_*/` | Ablation studies (rotation representations, etc.) |
-| `SCALING_*/` | Data scaling experiments |
-
-## Configuration
-
-Training is configured via YAML files in `configs/network/`. Key parameters:
-
-```yaml
-# configs/network/train_dex_ours.yaml
-batch_size: 8           # Scenes per batch
-max_iter: 50000         # Total training iterations
-lr: 0.001               # Learning rate
-
-data:
-  robot: leap_hand      # Hand type
-  num_points: 40000     # Points per scene
-  voxel_size: 0.005     # Sparse convolution voxel size
-
-model:
-  type: graspness_diffusion
-  backbone: sparseconv
-  joint_num: 16         # LEAP hand DOF
-  trans_scale: 25       # Translation scaling factor
+ln -s /path/to/dexgraspnet2-data/DexGraspNet2.0-ckpts data/DexGraspNet2.0-ckpts
 ```
 
 ## Supported Hands
 
-| Hand | DOF | Config |
-|------|-----|--------|
-| LEAP Hand | 16 | `robot: leap_hand` |
-| Parallel Gripper | 1 | `robot: gripper` |
-| Inspire Hand | 6 | `robot: inspire_hand` (requires grasp generation) |
+| Hand | DOF | Config YAML | Pretrained checkpoint |
+|---|---|---|---|
+| LEAP Hand | 16 | `configs/network/train_dex_ours.yaml` | `OURS/` |
+| Parallel Gripper | 1 | `configs/network/train_gripper_ours.yaml` | `OURS_gripper/` |
+
+Inspire Hand support is a work in progress — see [`docs/data_generation.md`](docs/data_generation.md) for the caveat and current state.
 
 ## Citation
 
@@ -301,6 +151,4 @@ model:
 
 ## License
 
-This work and the dataset are licensed under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/).
-
-[![CC BY-NC 4.0](https://licensebuttons.net/l/by-nc/4.0/88x31.png)](https://creativecommons.org/licenses/by-nc/4.0/)
+Inherited from the [upstream repository](https://github.com/PKU-EPIC/DexGraspNet2.0): [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/). Non-commercial use only; attribution required.

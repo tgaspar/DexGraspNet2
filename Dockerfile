@@ -129,6 +129,14 @@ RUN /opt/miniconda3/bin/conda init bash && \
     echo "conda activate py38" >> ~/.bashrc && \
     echo "export LD_LIBRARY_PATH=/opt/miniconda3/envs/py38/lib:\$LD_LIBRARY_PATH" >> ~/.bashrc
 
+# Inference HTTP server deps (scripts/serve_grasp_predictor.py).
+# IMPORTANT: keep this as the LAST pip install step so iterating on the server
+# doesn't invalidate the MinkowskiEngine / PyTorch / etc. layer caches above.
+RUN /opt/miniconda3/bin/conda run -n py38 pip install \
+    'fastapi==0.104.*' \
+    'uvicorn[standard]==0.24.*' \
+    'pydantic==2.*'
+
 # Set working directory
 WORKDIR /root/DexGraspNet2
 

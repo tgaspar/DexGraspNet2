@@ -26,13 +26,16 @@ Standard run template:
 
 ```bash
 docker run --rm --gpus all \
-  -v $(pwd):/root/DexGraspNet2 \
-  -v /mnt/datasets/dexgraspnet2/data:/root/DexGraspNet2/data \
-  -e PYTHONPATH=/root/DexGraspNet2 \
-  -w /root/DexGraspNet2 \
+  --user $(id -u):$(id -g) -e HOME=/tmp \
+  -v $(pwd):/workspace \
+  -v /mnt/datasets/dexgraspnet2/data:/workspace/data \
+  -e PYTHONPATH=/workspace \
+  -w /workspace \
   dexgraspnet2:latest \
   conda run -n py38 <command>
 ```
+
+Why the `--user` / `HOME=/tmp` / `/workspace` dance: the base image's `/root` is mode 700, so running as non-root there fails with `PermissionError: '/root/DexGraspNet2'`. Mounting at `/workspace` (world-accessible) fixes that. `HOME=/tmp` redirects PyTorch's ninja extension cache (`gymtorch.so` build) to a path the non-root user can write. Net effect: anything the container writes into the bind mount (`experiments/`, `outputs/`, `.logs/`) is owned by your host user — no `sudo chown` needed afterwards.
 
 For **Isaac Gym with GUI**, additional flags are mandatory (see `dexgraspnet2/run_isaac_gym.md`):
 

@@ -1,0 +1,73 @@
+<?xml version="1.0" ?>
+<scene>
+    <obj>
+        <obj_id>5</obj_id>
+        <obj_name>011_banana.ply</obj_name>
+        <obj_path>models/011_banana.ply</obj_path>
+        <pos_in_world>0.0151 -0.0318 0.4668</pos_in_world>
+        <ori_in_world>0.9823 0.0351 -0.1409 -0.1186</ori_in_world>
+    </obj>
+    <obj>
+        <obj_id>9</obj_id>
+        <obj_name>037_scissors.ply</obj_name>
+        <obj_path>models/037_scissors.ply</obj_path>
+        <pos_in_world>0.0853 -0.1070 0.4570</pos_in_world>
+        <ori_in_world>0.4863 0.0668 -0.0940 0.8661</ori_in_world>
+    </obj>
+    <obj>
+        <obj_id>11</obj_id>
+        <obj_name>012_strawberry.ply</obj_name>
+        <obj_path>models/012_strawberry.ply</obj_path>
+        <pos_in_world>0.0483 -0.0605 0.4571</pos_in_world>
+        <ori_in_world>0.4558 -0.3915 0.3059 -0.7385</ori_in_world>
+    </obj>
+    <obj>
+        <obj_id>18</obj_id>
+        <obj_name>032_knife.ply</obj_name>
+        <obj_path>models/032_knife.ply</obj_path>
+        <pos_in_world>-0.1461 0.0281 0.4975</pos_in_world>
+        <ori_in_world>0.7231 -0.0507 -0.6859 0.0632</ori_in_world>
+    </obj>
+    <obj>
+        <obj_id>20</obj_id>
+        <obj_name>044_flat_screwdriver.ply</obj_name>
+        <obj_path>models/044_flat_screwdriver.ply</obj_path>
+        <pos_in_world>-0.2344 -0.0321 0.4392</pos_in_world>
+        <ori_in_world>0.8598 -0.4514 -0.0722 0.2274</ori_in_world>
+    </obj>
+    <obj>
+        <obj_id>37</obj_id>
+        <obj_name>nzskincare_mouth_rinse.ply</obj_name>
+        <obj_path>models/nzskincare_mouth_rinse.ply</obj_path>
+        <pos_in_world>-0.1204 0.0873 0.4889</pos_in_world>
+        <ori_in_world>0.7123 -0.2145 -0.5404 -0.3932</ori_in_world>
+    </obj>
+    <obj>
+        <obj_id>38</obj_id>
+        <obj_name>dabao_sod.ply</obj_name>
+        <obj_path>models/dabao_sod.ply</obj_path>
+        <pos_in_world>0.0657 0.0905 0.4939</pos_in_world>
+        <ori_in_world>0.0225 0.3188 -0.9425 -0.0975</ori_in_world>
+    </obj>
+    <obj>
+        <obj_id>40</obj_id>
+        <obj_name>kispa_cleanser.ply</obj_name>
+        <obj_path>models/kispa_cleanser.ply</obj_path>
+        <pos_in_world>-0.1566 0.0004 0.3935</pos_in_world>
+        <ori_in_world>0.0684 0.1134 0.6090 0.7821</ori_in_world>
+    </obj>
+    <obj>
+        <obj_id>58</obj_id>
+        <obj_name>darlie_box.ply</obj_name>
+        <obj_path>models/darlie_box.ply</obj_path>
+        <pos_in_world>-0.1916 -0.0883 0.4552</pos_in_world>
+        <ori_in_world>0.5116 -0.4779 0.4067 0.5870</ori_in_world>
+    </obj>
+    <obj>
+        <obj_id>63</obj_id>
+        <obj_name>head_shoulders_supreme.ply</obj_name>
+        <obj_path>models/head_shoulders_supreme.ply</obj_path>
+        <pos_in_world>-0.0011 0.0958 0.4223</pos_in_world>
+        <ori_in_world>0.0065 0.0376 0.6025 0.7972</ori_in_world>
+    </obj>
+</scene>

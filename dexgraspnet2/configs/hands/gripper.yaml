@@ -1,0 +1,34 @@
+# Generic parallel-jaw gripper configuration for DexGraspNet2 inference.
+# Matches the "OURS_gripper" pretrained model: 1 DoF where the joint value
+# encodes jaw opening width in meters, range 0.0 → 0.1 m (10 cm — paper's
+# GRIPPER_MAX_WIDTH constant in src/utils/robot_info.py).
+
+name: gripper
+
+# URDF is referenced for visualization / future FK work. At inference time,
+# the GraspPredictor does not actually load or step the URDF — it only
+# validates that `num_dofs` matches the model's `joint_num`. Any valid
+# parallel-jaw gripper URDF works here; swap paths if you want to visualize
+# with a different gripper model.
+urdf_path: ../../../third_party/dex-urdf/robots/hands/panda_gripper/panda_gripper_glb.urdf
+meta_path: ./gripper_meta.yaml
+
+# 1 DoF: the scalar jaw opening width.
+num_dofs: 1
+
+# The single "joint" represents target jaw width in meters.
+# Named generically; the server's API response uses `gripper_width` for this
+# anyway (1-DoF hands trigger the gripper response format in the API).
+joint_names:
+  - finger_joint
+
+# Paper convention: GRIPPER_MAX_WIDTH = 0.1 m.
+joint_lower_limits: [0.0]
+joint_upper_limits: [0.1]
+
+# Placeholder fingertip / wrist names (for future simulation work).
+# Not used by the inference server.
+fingertip_links:
+  - left_finger_tip
+  - right_finger_tip
+wrist_link: gripper_base
