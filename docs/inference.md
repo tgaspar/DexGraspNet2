@@ -50,6 +50,22 @@ docker run --rm --gpus all \
       --host 0.0.0.0 --port 8000"
 ```
 
+### What `--hand-config` actually does (and doesn't)
+
+**Tuning the hand YAML does NOT change what the model predicts.** The model was trained against a specific gripper geometry (1 DoF, jaw width in metres, `GRIPPER_MAX_WIDTH = 0.1 m`) — those numbers are baked into the weights. Editing `joint_upper_limits`, swapping the URDF, or renaming joints won't shift the distribution of predicted grasps one bit.
+
+What the YAML *does* feed:
+
+| Field | Used for |
+|---|---|
+| `num_dofs` | Startup sanity check against `config.model.joint_num`; mismatch → refuse to start. |
+| `name` / `num_dofs == 1` | Hand-family routing: triggers gripper response format (`gripper_width` in the API) vs. dex format (per-joint angles). |
+| `tcp_rotation_rpy` | Computes `approach_axis` in the API response. Absent for the gripper → defaults to `[0, 0, 1]` in wrist frame. |
+| `urdf_path` + `meta_path` | Loaded only by the `--dump-html` / `--dump-usd` debug renderers — never by the prediction path. |
+| `joint_names`, `joint_lower_limits`, `joint_upper_limits`, `fingertip_links`, `wrist_link` | Surfaced on `/config` for operator/client introspection; not consumed by inference. |
+
+Practical consequence: if you want to use a different physical gripper than the one the paper trained on, the YAML won't save you — you'd need to retrain (or accept that the predicted widths refer to the paper's 10 cm gripper and scale client-side). The YAML is metadata + glue for the serving layer; the model is the model.
+
 ### Optional debug dumps
 
 Add any combination of:

@@ -2,6 +2,15 @@
 # Matches the "OURS_gripper" pretrained model: 1 DoF where the joint value
 # encodes jaw opening width in meters, range 0.0 → 0.1 m (10 cm — paper's
 # GRIPPER_MAX_WIDTH constant in src/utils/robot_info.py).
+#
+# IMPORTANT: values in this file do NOT steer the model. The checkpoint was
+# trained against a fixed gripper geometry; editing fields here won't change
+# predictions. See `docs/inference.md` (section "What --hand-config actually
+# does (and doesn't)") for which fields are actually consumed (startup DOF
+# check, API response formatting, debug-dump rendering) and which are pure
+# metadata. Swap this in for a different physical gripper only if you are
+# retraining — otherwise the predicted widths remain in the paper's 10 cm
+# frame regardless.
 
 name: gripper
 
