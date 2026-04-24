@@ -77,7 +77,7 @@ The script prints a `QUICK TEST PASSED` banner when done and writes `outputs/qui
 
 `--user $(id -u):$(id -g)` + `HOME=/tmp` runs the container as your host user so the output HTML lands owned by you — openable in Firefox without a trip through `sudo chown`.
 
-What this exercises: Docker image + CUDA, MinkowskiEngine, `dexgraspnet2.inference.GraspPredictor`, checkpoint loading, diffusion sampling, Plotly HTML output. If the quick test passes, the refactored inference code path (the same one behind the FastAPI server) is live.
+What this verifies: Docker image + CUDA, MinkowskiEngine, `dexgraspnet2.inference.GraspPredictor`, checkpoint loading, diffusion sampling, Plotly HTML output. If the quick test passes, the refactored inference code path (the same one behind the FastAPI server) is live.
 
 Common failures:
 - **Checkpoint not found** → `tar -xf` didn't run or extracted elsewhere. Re-check `data/DexGraspNet2.0-ckpts/OURS/ckpt/ckpt_50000.pth` exists.

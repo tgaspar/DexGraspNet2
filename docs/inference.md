@@ -11,7 +11,29 @@ Two ways to get grasps out of a pretrained checkpoint:
 
 Loads one checkpoint at startup, exposes `POST /predict` + `/healthz` / `/config` / `/version`. Full API schema lives in [`docs/api/predict.md`](api/predict.md) — this page is the operator's-eye overview.
 
-### Launch (gripper model)
+### Launch (LEAP hand)
+
+```bash
+docker run --rm --gpus all \
+  --user $(id -u):$(id -g) -e HOME=/tmp \
+  --network host \
+  -v $(pwd):/workspace \
+  -v /path/to/data:/workspace/data \
+  -w /workspace -e PYTHONPATH=/workspace \
+  dexgraspnet2:latest \
+  bash -c "source /opt/miniconda3/etc/profile.d/conda.sh && conda activate py38 && \
+    python scripts/serve_grasp_predictor.py \
+      --checkpoint data/DexGraspNet2.0-ckpts/OURS/ckpt/ckpt_50000.pth \
+      --host 0.0.0.0 --port 8000"
+```
+
+No `--hand-config` flag needed: `GraspPredictor` reads `data.robot` from the checkpoint's sibling `config.yaml` and auto-loads `HandConfig.leap_hand()`.
+
+`--user $(id -u):$(id -g)` + `HOME=/tmp` makes any debug dumps (`--dump-html`, `--dump-usd`, `--dump-npz`) under `.logs/` land owned by your host user. Applies to every `docker run` in this doc.
+
+### Launch (parallel-jaw gripper)
+
+The gripper checkpoint's `config.yaml` doesn't identify its hand family, so the server needs an explicit `--hand-config`:
 
 ```bash
 docker run --rm --gpus all \
@@ -27,10 +49,6 @@ docker run --rm --gpus all \
       --hand-config dexgraspnet2/configs/hands/gripper.yaml \
       --host 0.0.0.0 --port 8000"
 ```
-
-`--user $(id -u):$(id -g)` + `HOME=/tmp` makes any debug dumps (`--dump-html`, `--dump-usd`, `--dump-npz`) under `.logs/` land owned by your host user. Applies to every `docker run` in this doc.
-
-For LEAP hand, swap the checkpoint and omit `--hand-config` — the server's `GraspPredictor` infers LEAP automatically from the checkpoint's `config.yaml`.
 
 ### Optional debug dumps
 
