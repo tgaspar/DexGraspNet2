@@ -1,11 +1,11 @@
 __pycache__
-data
-experiments
+/data
+/experiments
 .vscode
-wandb
-DexGraspNet2.0-ckpts
-pretrained
-tmp
+/wandb
+/DexGraspNet2.0-ckpts
+/pretrained
+/tmp
 
 # Visualization outputs
 *.html
