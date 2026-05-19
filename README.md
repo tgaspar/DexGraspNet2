@@ -54,10 +54,10 @@ Before downloading multi-GB datasets, smoke-test the whole pipeline first. A bun
 
 ```bash
 # Fetch the checkpoints tarball, extract only the LEAP files we need
-mkdir -p data/DexGraspNet2.0-ckpts
-cd data/DexGraspNet2.0-ckpts
+mkdir data
+cd data
 wget https://huggingface.co/datasets/lhrlhr/DexGraspNet2.0/resolve/main/DexGraspNet2.0-ckpts.tar
-tar -xf DexGraspNet2.0-ckpts.tar OURS/config.yaml OURS/ckpt/ckpt_50000.pth
+tar -xf DexGraspNet2.0-ckpts.tar DexGraspNet2.0-ckpts/OURS/config.yaml DexGraspNet2.0-ckpts/OURS/ckpt/ckpt_50000.pth
 cd -
 
 mkdir -p outputs
